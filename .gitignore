@@ -3,6 +3,9 @@ selftest.html
 start.bat
 _*.html
 
+# Лідерборд, який сервер створює під час роботи
+data/
+
 # ОС
 Thumbs.db
 desktop.ini

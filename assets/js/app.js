@@ -176,8 +176,9 @@
     { href: '#/market',    label: 'Маркетплейс', key: 'market' },
     { href: '#/upgrade',   label: 'Апгрейд',     key: 'upgrade' },
     { href: '#/inventory', label: 'Інвентар',    key: 'inventory' },
-    { href: '#/wallet',    label: 'Гаманець',    key: 'wallet' },
-    { href: '#/leaders',   label: 'Лідерборд',   key: 'leaders' }
+    { href: '#/profile',   label: 'Профіль',     key: 'profile' },
+    { href: '#/leaders',   label: 'Лідерборд',   key: 'leaders' },
+    { href: '#/admin',     label: 'Адмінка',     key: 'admin' }
   ];
 
   function header() {
@@ -198,12 +199,12 @@
 
         <div class="hdr__right">
           ${account ? `
-            <button class="balance" type="button" data-nav="#/wallet" title="Баланс">
+            <button class="balance" type="button" data-nav="#/profile" title="Баланс">
               <span class="balance__coin">${icon('coin', 16)}</span>
               <span class="balance__value">${formatNumber(account.balance)}</span>
               <span class="balance__cur">${CUR}</span>
             </button>
-            <button class="user-chip" type="button" data-nav="#/wallet">
+            <button class="user-chip" type="button" data-nav="#/profile" title="Мій профіль">
               <span class="user-chip__avatar">${avatarHTML(account)}</span>
               <span class="user-chip__name">${escapeHtml(account.name)}</span>
             </button>` : `
@@ -883,8 +884,8 @@
             '<span><b>Жодна ціль не по кишенці</b><br>' +
             'Найдешевший апгрейд цього предмета — ' + formatNumber(cheapestCost) + ' ' + CUR +
             ', бракує ' + formatNumber(cheapestCost - balance) + '.<br>' +
-            'Гроші: промокод або перегляд ролика — <a href="#/wallet">у гаманці</a>. ' +
-            'Або оберіть дешевший предмет ліворуч.</span></div>'
+            'Гроші: промокод або перегляд ролика — <a href="#/profile">у профілі</a>. ' +
+            'Або оберіть дешевший предмет ліворуч. Гроші — у <a href="#/profile">профілі</a>.</span></div>'
         : '';
 
       /* найдорожчий предмет у каталозі апгрейдити нікуди: кажуть
@@ -1077,7 +1078,7 @@
         (ok
           ? '<div class="upg-balance__need">Потрібно ' + formatNumber(cost) + ' ' + CUR +
             (short
-              ? ' · бракує ' + formatNumber(missing) + ' · <a href="#/wallet">де взяти</a>'
+              ? ' · бракує ' + formatNumber(missing) + ' · <a href="#/profile">де взяти</a>'
               : ' · вистачає') + '</div>'
           : '<div class="upg-balance__need">Оберіть предмет і ціль</div>');
 
@@ -1185,8 +1186,8 @@
            промокод або перегляд ролика. */
         const vb = S.videoBonus();
         toast('Бракує ' + formatNumber(cost - acc.balance) + ' ' + CUR +
-          '. Промокод або перегляд ролика — у гаманці.', 'error', 5200);
-        location.hash = '#/wallet';
+          '. Промокод або перегляд ролика — у профілі.', 'error', 5200);
+        location.hash = '#/profile';
         return;
       }
 
@@ -1369,7 +1370,7 @@
     return wrap;
   };
 
-  /* -------------------------------- Гаманець ------------------------------- */
+  /* -------------------------------- Профіль ------------------------------- */
 
   /**
    * Підказка під балансом: звідки взагалі можна взяти гроші. Кнопки
@@ -1427,24 +1428,38 @@
       </section>`;
   }
 
-  PAGES.wallet = function () {
+  /* ==========================================================================
+     Профіль
+
+     Один екран про себе: аватар, нік, баланс, промокод, ролики за нагороду,
+     історія операцій і вихід. Окремої сторінки «Гаманець» більше немає —
+     вона була дублем профілю й лише плутала.
+     ========================================================================== */
+
+  PAGES.profile = function () {
     const account = S.getAccount();
-    if (!account) return needAuth('Гаманець доступний після входу за ключем');
+    if (!account) return needAuth('Профіль доступний після входу');
 
     const promos = S.redeemedPromos();
 
     const wrap = document.createElement('div');
-    wrap.className = 'page page--wallet';
+    wrap.className = 'page page--profile';
 
     wrap.innerHTML = `
       <header class="page__head">
-        <div>
-          <h1 class="page__title">Гаманець</h1>
-          <p class="page__sub">Профіль <b>${escapeHtml(account.name)}</b> · ключ <code>${escapeHtml(account.key)}</code></p>
+        <div class="prof-head">
+          ${avatarHTML(account, 'avatar--xl avatar--ring')}
+          <div>
+            <h1 class="page__title">${escapeHtml(account.name)}</h1>
+            <p class="page__sub">
+              Пароль: <code class="prof-key">${escapeHtml(account.key)}</code>
+              · з ${escapeHtml(dateOf(account.createdAt))}
+            </p>
+          </div>
         </div>
       </header>
 
-      <div class="wallet-grid">
+      <section class="prof-cards">
         <div class="wallet-card">
           <span class="wallet-card__label">Баланс</span>
           <span class="wallet-card__value">${formatNumber(account.balance)} <i>${CUR}</i></span>
@@ -1467,9 +1482,59 @@
               <button class="btn btn--primary" type="submit">Активувати</button>
             </form>`}
         </div>
-      </div>
+      </section>
 
       ${adBlockHTML()}
+
+      <section class="section">
+        <header class="section__head"><h2 class="section__title">Профіль</h2></header>
+        <div class="profile-row">
+          <input class="input" id="name" value="${escapeHtml(account.name)}" maxlength="24" aria-label="Ім'я">
+          <button class="btn btn--ghost" type="button" data-act="rename">Зберегти</button>
+          ${S.isAdmin(account)
+            ? `<a class="btn btn--primary" href="#/admin">${icon('gift', 16)} Адмінка</a>`
+            : ''}
+          <button class="btn btn--ghost btn--danger" type="button" data-act="logout">${icon('logout', 16)} Вийти</button>
+          <button class="btn btn--ghost btn--danger" type="button" data-act="reset">Скинути акаунт</button>
+        </div>
+        ${S.isAdmin(account)
+          ? `<p class="profile-admin">${icon('info', 14)} Ви увійшли як автор. Гравці, пасхалки й ручне нарахування TX — на
+             <a href="#/admin">сторінці адмінки</a>.</p>`
+          : ''}
+      </section>
+
+      <section class="section">
+        <header class="section__head">
+          <h2 class="section__title">Аватар</h2>
+          <p class="section__note">${account.avatar
+            ? 'Картинка збережена разом з акаунтом'
+            : 'Поки що перша літера імені'}</p>
+        </header>
+        <div class="avatar-row">
+          <div class="avatar-row__pic">
+            ${avatarHTML(account, 'avatar--lg avatar--ring')}
+            <div class="avatar-row__btns">
+              <label class="btn btn--primary btn--sm">
+                ${icon('camera', 16)} ${account.avatar ? 'Замінити' : 'Завантажити фото'}
+                <input type="file" id="avatar-file" class="visually-hidden"
+                       accept="image/png,image/jpeg,image/jpg,image/webp,image/gif">
+              </label>
+              ${account.avatar ? `
+                <button class="btn btn--ghost btn--sm btn--danger" type="button" data-act="avatar-del">
+                  ${icon('trash', 16)} Прибрати
+                </button>` : ''}
+            </div>
+          </div>
+          <div class="avatar-row__body">
+            <p class="wallet-card__note">
+              Оберіть будь-яку картинку — вона обріжеться по центру в квадрат
+              ${S.AVATAR_SIZE}×${S.AVATAR_SIZE}. Нік і аватар показуються в
+              спільному лідерборді; сам пароль на сервер не потрапляє.
+            </p>
+            <p class="avatar-row__msg" id="avatar-msg" role="status" aria-live="polite"></p>
+          </div>
+        </div>
+      </section>
 
       ${promos.length ? `
       <section class="section">
@@ -1504,58 +1569,7 @@
             </tbody>
           </table>
         </div>
-      </section>` : ''}
-
-      <section class="section">
-        <header class="section__head">
-          <h2 class="section__title">Аватар</h2>
-          <p class="section__note">${account.avatar
-            ? 'Картинка збережена в цьому браузері'
-            : 'Поки що перша літера імені'}</p>
-        </header>
-        <div class="avatar-row">
-          <div class="avatar-row__pic">
-            ${avatarHTML(account, 'avatar--lg avatar--ring')}
-            <div class="avatar-row__btns">
-              <label class="btn btn--primary btn--sm">
-                ${icon('camera', 16)} ${account.avatar ? 'Замінити' : 'Завантажити фото'}
-                <input type="file" id="avatar-file" class="visually-hidden"
-                       accept="image/png,image/jpeg,image/jpg,image/webp,image/gif">
-              </label>
-              ${account.avatar ? `
-                <button class="btn btn--ghost btn--sm btn--danger" type="button" data-act="avatar-del">
-                  ${icon('trash', 16)} Прибрати
-                </button>` : ''}
-            </div>
-          </div>
-          <div class="avatar-row__body">
-            <p class="wallet-card__note">
-              Оберіть будь-яку картинку — вона обріжеться по центру в квадрат
-              ${S.AVATAR_SIZE}×${S.AVATAR_SIZE} і збережеться разом з акаунтом у цьому браузері.
-              Нікуди на сервер не відправляється: сервера тут немає, тому аватар
-              не побачать інші гравці з інших комп’ютерів.
-            </p>
-            <p class="avatar-row__msg" id="avatar-msg" role="status" aria-live="polite"></p>
-          </div>
-        </div>
-      </section>
-
-      <section class="section">
-        <header class="section__head"><h2 class="section__title">Профіль</h2></header>
-        <div class="profile-row">
-          <input class="input" id="name" value="${escapeHtml(account.name)}" maxlength="24" aria-label="Ім'я">
-          <button class="btn btn--ghost" type="button" data-act="rename">Зберегти</button>
-          ${S.isAdmin(account)
-            ? `<a class="btn btn--primary" href="#/admin">${icon('gift', 16)} Адмінка</a>`
-            : ''}
-          <button class="btn btn--ghost btn--danger" type="button" data-act="logout">${icon('logout', 16)} Вийти</button>
-          <button class="btn btn--ghost btn--danger" type="button" data-act="reset">Скинути акаунт</button>
-        </div>
-        ${S.isAdmin(account)
-          ? `<p class="profile-admin">${icon('info', 14)} Ви увійшли як автор. Гравці, пасхалки й ручне нарахування TX — на
-             <a href="#/admin">сторінці адмінки</a>.</p>`
-          : ''}
-      </section>`;
+      </section>` : ''}`;
 
     /* --- Реклама: нагорода за перегляд --- */
     wrap.addEventListener('click', function (e) {
@@ -1651,7 +1665,7 @@
   };
 
   /* -------------------------------- Адмінка -------------------------------- */
-  /* Немає посилань у навігації чи підвалі. Доступ — за входом на #/admin.   */
+  /* Пункт у меню профілю: видно завжди, але сам панель закрита паролем. */
 
   PAGES.admin = function () {
     if (!S.getAccount()) return needAuth('Адмінка доступна після входу за ключем');
@@ -1969,7 +1983,7 @@
           <code class="login-card__key">${escapeHtml(account.key)}</code>
           <div class="login-card__actions">
             <a class="btn btn--primary" href="#/market">Маркетплейс</a>
-            <a class="btn btn--ghost" href="#/wallet">Гаманець</a>
+            <a class="btn btn--ghost" href="#/profile">Мій профіль</a>
             <a class="btn btn--ghost" href="#/upgrade">Апгрейд</a>
             <a class="btn btn--ghost" href="#/leaders">Лідерборд</a>
             <button class="btn btn--ghost" type="button" data-act="logout">Вийти</button>
@@ -2199,7 +2213,8 @@
 
   /**
    * Сторінка «це не ваш акаунт». Ключі адмінів лежать у data.js, тож
-   * іншим гравцям вона нічого не розкриває — лише каже, що зайти не можна.
+   * сторінка закрита паролем власника. Після правильного пароля
+   * акаунт запам'ятовує доступ, тож надалі вводити нічого не треба.
    */
   function notYourAdmin() {
     const el = document.createElement('div');
@@ -2207,10 +2222,43 @@
     el.innerHTML = `
       <div class="login-card">
         <span class="login-card__icon">${icon('lock', 26)}</span>
-        <h1>Це не для вашого акаунта</h1>
-        <p class="login-card__sub">Панель автора доступна тільки власнику сайту.</p>
-        <a class="btn btn--primary btn--lg" href="#/home">На головну</a>
+        <h1>Панель автора</h1>
+        <p class="login-card__sub">
+          Список гравців, знайдені пасхалки й ручне нарахування TX.
+          Відкривається паролем власника сайту — він не той самий, що пароль
+          від акаунту, і ніде не зберігається в браузері.
+        </p>
+        <form class="login-card__form" id="adm-unlock" autocomplete="off">
+          <input class="input" id="adm-pass" type="password"
+                 placeholder="Пароль власника" aria-label="Пароль власника">
+          <button class="btn btn--primary btn--lg" type="submit">${icon('lock', 16)} Відкрити</button>
+        </form>
+        <p class="login-card__msg" id="adm-msg" role="status" aria-live="polite"></p>
+        <a class="btn btn--ghost" href="#/profile">${icon('back', 16)} До профілю</a>
       </div>`;
+
+    const form = el.querySelector('#adm-unlock');
+    const msg = el.querySelector('#adm-msg');
+    const input = el.querySelector('#adm-pass');
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (!S.getAccount()) {
+        msg.textContent = 'Спершу увійдіть в акаунт — до якого прив’яжеться доступ.';
+        msg.className = 'login-card__msg is-err';
+        return;
+      }
+      if (S.unlockAdmin(input.value)) {
+        msg.className = 'login-card__msg';
+        render();
+      } else {
+        input.value = '';
+        input.focus();
+        msg.textContent = 'Пароль не підійшов.';
+        msg.className = 'login-card__msg is-err';
+      }
+    });
+
     return el;
   }
 
@@ -2245,21 +2293,25 @@
     const me = S.getAccount();
     const raw = Number(param);
     const offset = DAY_TABS.indexOf(raw) !== -1 ? raw : 0;
-
-    const sum = S.leaderboardSummary(offset);
     const label = S.dayLabel(offset);
+    const medals = ['🥇', '🥈', '🥉'];
+
+    /* локальні рядки цього браузера — вони малюються одразу,
+       не чекаючи відповіді сервера */
+    const localRows = S.leaderboard(offset).map(function (r) {
+      return Object.assign({}, r, { isMe: !!(me && r.key === me.key) });
+    });
 
     const wrap = document.createElement('div');
     wrap.className = 'page page--leaders';
-
-    const medals = ['🥇', '🥈', '🥉'];
 
     wrap.innerHTML = `
       <header class="page__head">
         <div>
           <h1 class="page__title">Лідерборд</h1>
-          <p class="page__sub">Хто скільки <b>вибив</b> за ${escapeHtml(label)} — за цю добу рахуються всі надходження на акаунти</p>
+          <p class="page__sub">Хто скільки <b>вибив</b> за ${escapeHtml(label)}</p>
         </div>
+        <span class="lead-live" id="lead-live" hidden>${icon('bolt', 14)} спільний</span>
       </header>
 
       <div class="lead-tabs">
@@ -2270,86 +2322,100 @@
         }).join('')}
       </div>
 
-      <div class="lead-cards">
-        <div class="lead-card">
-          <span class="lead-card__label">Вибито за ${escapeHtml(label)}</span>
-          <span class="lead-card__value">${formatNumber(sum.total)} <i>${CUR}</i></span>
-        </div>
-        <div class="lead-card">
-          <span class="lead-card__label">Гравців сьогодні</span>
-          <span class="lead-card__value">${sum.active} <i>з ${sum.players}</i></span>
-        </div>
-      </div>
-
-      ${sum.rows.length ? `
-      <div class="table-wrap">
-        <table class="table table--lead">
-          <thead>
-            <tr>
-              <th class="lead-num">#</th>
-              <th>Нік</th>
-              <th class="lead-money">Вибито</th>
-              <th class="lead-money">Витрачено</th>
-              <th class="lead-money">Підсумок</th>
-              <th>Виграно</th>
-              <th class="lead-money">Баланс</th>
-              <th>Предметів</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${sum.rows.map(function (r, i) {
-              const isMe = me && r.key === me.key;
-              return `<tr class="${isMe ? 'is-me' : ''}">
-                <td class="lead-num">${medals[i] || (i + 1)}</td>
-                <td class="lead-name">
-                  <span class="lead-who">
-                    ${avatarHTML(r, 'avatar--sm')}
-                    <span class="lead-who__text">
-                      ${escapeHtml(r.name)}
-                      ${isMe ? '<span class="lead-tag">це ви</span>' : ''}
-                      <code class="lead-key">${escapeHtml(maskKey(r.key))}</code>
-                    </span>
-                  </span>
-                </td>
-                <td class="lead-money pos">${r.won ? '+' + formatNumber(r.won) : '—'}</td>
-                <td class="lead-money neg">${r.spent ? '−' + formatNumber(r.spent) : '—'}</td>
-                <td class="lead-money ${r.net > 0 ? 'pos' : r.net < 0 ? 'neg' : 'muted'}">
-                  ${r.net ? (r.net > 0 ? '+' : '−') + formatNumber(Math.abs(r.net)) : '0'}
-                </td>
-                <td class="muted">${r.wins}${r.plays ? ` <span class="muted">/ ${r.plays}</span>` : ''}</td>
-                <td class="lead-money">${formatNumber(r.balance)}</td>
-                <td class="muted">${r.items}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>` : `
-      <div class="panel"><p class="panel__hint">${icon('warn', 16)} Акаунтів поки немає. Створіть перший на сторінці
-        <a href="#/login">входу</a> — і він з’явиться в таблиці.</p></div>`}
-
-      <!-- Чесна відмова: без сервера чужих акаунтів не існує. -->
-      ${sum.rows.length > 1 ? '' : `
-      <div class="lead-note">
-        ${icon('info', 16)}
-        <div>
-          <b>Чому тут лише свої акаунти</b><br>
-          Сайт працює без сервера: кожен акаунт лежить у пам’яті того браузера,
-          де його створили. Ваш комп’ютер не бачить акаунтів інших людей —
-          так само, як інші не бачать ваших. Спільний лідерборд потребує сервера
-          з базою даних, а це вже не статичний сайт.
-          ${sum.rows.length > 1
-            ? ''
-            : '<br>Створіть тут кілька акаунтів через <a href="#/login">вхід</a> — тоді таблиця покаже їх усі.'}
-        </div>
-      </div>`}
+      <div class="lead-cards" id="lead-cards"></div>
+      <div id="lead-slot"></div>
 
       <p class="lead-note">
         ${icon('warn', 15)}
-        Рахується з історії операцій акаунтів, створених <b>у цьому браузері</b>.
-        Гравець на іншому комп’ютері сюди не потрапить — сервера немає, тому спільної
-        таблиці на всіх не існує. Якщо потрібна одна таблиця для всіх — треба
-        бекенд.
+        Рахунок береться з історії операцій. Нік і аватар — ті, що ви вказали
+        в профілі. Пароль акаунту на сервер не потрапляє ніколи.
       </p>`;
+
+    /* ------------------------------ малюємо ----------------------------- */
+
+    function draw(rows, shared) {
+      const total = rows.reduce(function (s, r) { return s + r.won; }, 0);
+      const active = rows.filter(function (r) { return r.plays > 0; }).length;
+
+      wrap.querySelector('#lead-cards').innerHTML = `
+        <div class="lead-card">
+          <span class="lead-card__label">Вибито за ${escapeHtml(label)}</span>
+          <span class="lead-card__value">${formatNumber(total)} <i>${CUR}</i></span>
+        </div>
+        <div class="lead-card">
+          <span class="lead-card__label">Гравців сьогодні</span>
+          <span class="lead-card__value">${active} <i>з ${rows.length}</i></span>
+        </div>`;
+
+      const slot = wrap.querySelector('#lead-slot');
+
+      if (!rows.length) {
+        slot.innerHTML = `<div class="panel"><p class="panel__hint">${icon('warn', 16)}
+          Акаунтів поки немає. Створіть перший на сторінці
+          <a href="#/login">входу</a> — і він з’явиться в таблиці.</p></div>`;
+        return;
+      }
+
+      slot.innerHTML = `
+        <div class="table-wrap">
+          <table class="table table--lead">
+            <thead>
+              <tr>
+                <th class="lead-num">#</th>
+                <th>Нік</th>
+                <th class="lead-money">Вибито</th>
+                <th class="lead-money">Витрачено</th>
+                <th class="lead-money">Підсумок</th>
+                <th>Виграно</th>
+                <th class="lead-money">Баланс</th>
+                <th>Предметів</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(function (r, i) {
+                return `<tr class="${r.isMe ? 'is-me' : ''}">
+                  <td class="lead-num">${medals[i] || (i + 1)}</td>
+                  <td class="lead-name">
+                    <span class="lead-who">
+                      ${avatarHTML(r, 'avatar--sm')}
+                      <span class="lead-who__text">
+                        ${escapeHtml(r.name)}
+                        ${r.isMe ? '<span class="lead-tag">це ви</span>' : ''}
+                      </span>
+                    </span>
+                  </td>
+                  <td class="lead-money pos">${r.won ? '+' + formatNumber(r.won) : '—'}</td>
+                  <td class="lead-money neg">${r.spent ? '−' + formatNumber(r.spent) : '—'}</td>
+                  <td class="lead-money ${r.net > 0 ? 'pos' : r.net < 0 ? 'neg' : 'muted'}">
+                    ${r.net ? (r.net > 0 ? '+' : '−') + formatNumber(Math.abs(r.net)) : '0'}
+                  </td>
+                  <td class="muted">${r.wins}${r.plays ? ` <span class="muted">/ ${r.plays}</span>` : ''}</td>
+                  <td class="lead-money">${formatNumber(r.balance)}</td>
+                  <td class="muted">${r.items}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>`;
+
+      const live = wrap.querySelector('#lead-live');
+      if (live) live.hidden = !shared;
+    }
+
+    draw(localRows, false);
+
+    /* ------------------------ спільна таблиця --------------------------- */
+
+    /* Сервер є тільки коли сайт відкритий через http(s). Якщо це
+       index.html з диска — лишаємось на локальних даних, без помилок. */
+    if (RG.board && RG.board.available()) {
+      RG.board.report(localRows, offset);
+      RG.board.getBoard(offset).then(function (remote) {
+        if (!remote) return;                       // сервера немає
+        const merged = RG.board.merge(localRows, remote);
+        draw(merged.rows, merged.shared);
+      });
+    }
 
     wrap.querySelector('.lead-tabs').addEventListener('click', function (e) {
       const b = e.target.closest('[data-day]');
@@ -2392,7 +2458,7 @@
           <a href="#/market">Маркетплейс</a>
           <a href="#/upgrade">Апгрейд</a>
           <a href="#/inventory">Інвентар</a>
-          <a href="#/wallet">Гаманець</a>
+          <a href="#/profile">Профіль</a>
           <a href="#/leaders">Лідерборд</a>
         </div>
         <div class="ftr__col">
@@ -2413,14 +2479,18 @@
 
   const TITLES = {
     home: 'Головна', market: 'Маркетплейс', upgrade: 'Апгрейд',
-    inventory: 'Інвентар', wallet: 'Гаманець', login: 'Вхід',
-    leaders: 'Лідерборд', admin: 'Промокоди'
+    inventory: 'Інвентар', profile: 'Профіль', login: 'Вхід',
+    leaders: 'Лідерборд', admin: 'Адмінка'
   };
+
+  /* Старі закладки й посилання на #/wallet ведуть туди ж, куди профіль. */
+  const ALIASES = { wallet: 'profile' };
 
   function resolveRoute() {
     const raw = location.hash.replace(/^#\/?/, '');
     const parts = raw.split('/');
-    return { name: parts[0] || 'home', param: parts[1] };
+    const name = parts[0] || 'home';
+    return { name: ALIASES[name] || name, param: parts[1] };
   }
 
   function render() {

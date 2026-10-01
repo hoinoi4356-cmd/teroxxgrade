@@ -1172,6 +1172,28 @@ main { flex: 1; }
   .wheel__wrap { max-width: 300px; }
 }
 
+/* ------------------------------- профіль -------------------------------- */
+.avatar--xl { width: 104px; height: 104px; font-size: 40px; border-radius: var(--r-xl); flex: none; }
+
+.prof-head { display: flex; align-items: center; gap: var(--sp-5); }
+.prof-head .page__title { margin: 0 0 4px; }
+
+.prof-key {
+  font-family: var(--font-mono); font-size: .92em;
+  padding: 2px 7px; border-radius: var(--r-sm);
+  background: var(--surface-2); border: 1px solid var(--line);
+  color: var(--text-dim); word-break: break-all;
+}
+
+.prof-cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--sp-4); margin-bottom: var(--sp-6);
+}
+
+@media (max-width: 560px) {
+  .prof-head { flex-direction: column; align-items: flex-start; gap: var(--sp-3); }
+}
+
 /* ------------------------------- гаманець ------------------------------- */
 .wallet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--sp-4); }
 .wallet-card {
@@ -1323,6 +1345,17 @@ main { flex: 1; }
 .tabs__btn.is-on { background: var(--bg-block); color: var(--text); box-shadow: var(--shadow-sm); }
 .tabpane[hidden] { display: none; }
 
+/* позначка «спільний» — коли вдалося зв’язатися із сервером */
+.lead-live {
+  display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+  padding: 5px 11px; border-radius: 999px;
+  border: 1px solid #84b03055; background: #84b03014;
+  color: #9dc46a; font-size: 11px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.lead-live[hidden] { display: none; }
+
 /* чесна примітка під лідербордом */
 .lead-note {
   display: flex; align-items: flex-start; gap: 10px;
@@ -1431,6 +1464,21 @@ main { flex: 1; }
 .rules b { color: var(--text); }
 
 /* --------------------------------- вхід ---------------------------------- */
+.login-card__form {
+  display: flex; gap: var(--sp-2); width: 100%;
+}
+.login-card__form .input { flex: 1; min-width: 0; }
+.login-card__form .btn { flex: none; }
+
+.login-card__msg {
+  min-height: 18px; font-size: 12.5px; color: var(--text-dim);
+}
+.login-card__msg.is-err { color: var(--accent); }
+
+@media (max-width: 480px) {
+  .login-card__form { flex-direction: column; }
+}
+
 .login-card {
   width: 100%; max-width: 420px;
   display: flex; flex-direction: column; align-items: center; gap: var(--sp-3);

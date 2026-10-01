@@ -798,10 +798,48 @@
 
   /* ------------------------------- адмінка --------------------------------- */
 
-  /** Чи в акаунта є права адміністратора (список ключів — у data.js). */
+  /**
+   * Чи в акаунта є права адміністратора.
+   *
+   * Два шляхи:
+   *   1) ключ акаунту сам є паролем адмінки (див. ADMIN_KEYS у data.js);
+   *   2) власник один раз вводив пароль адмінки на будь-якому комп'ютері —
+   *      тоді в акаунті зберігається позначка admin. Так автор отримує
+   *      доступ, навіть якщо його звичайний акаунт має інший ключ.
+   */
   function isAdmin(account) {
     const a = account === undefined ? getAccount() : account;
-    return !!(a && (D.ADMIN_KEYS || []).indexOf(a.key) !== -1);
+    if (!a) return false;
+    return !!((D.ADMIN_KEYS || []).indexOf(a.key) !== -1 || a.admin === true);
+  }
+
+  /**
+   * Спроба розблокувати адмінку паролем власника. Успіх записує позначку
+   * в поточному акаунті, тож надалі введення не потрібне.
+   *
+   * @returns {boolean} чи пароль підійшов
+   */
+  function unlockAdmin(pass) {
+    const keys = D.ADMIN_KEYS || [];
+    const ok = !!pass && keys.indexOf(String(pass).trim()) !== -1;
+    if (!ok) return false;
+
+    const a = getAccount();
+    if (!a) return false;
+
+    a.admin = true;
+    const accounts = loadAccounts();
+    if (accounts[a.key]) {
+      accounts[a.key].admin = true;
+      saveAccounts(accounts);
+    }
+    return true;
+  }
+
+  /** Чи в акаунті вже записано, що він адмінський (для показу в профілі). */
+  function adminUnlocked(account) {
+    const a = account === undefined ? getAccount() : account;
+    return !!(a && a.admin === true);
   }
 
   /** Список усіх акаунтів браузера — для панелі адміністратора. */
@@ -902,6 +940,8 @@
     formatMoney: formatMoney,
 
     isAdmin: isAdmin,
+    unlockAdmin: unlockAdmin,
+    adminUnlocked: adminUnlocked,
     adminAccounts: adminAccounts,
     adminCredit: adminCredit,
     findEgg: findEgg,

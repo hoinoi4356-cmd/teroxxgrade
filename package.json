@@ -1,0 +1,13 @@
+{
+  "name": "teroxxgrade",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RUSTGRADE — market of Rust skins and trade-up wheel, static site with a shared daily leaderboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
