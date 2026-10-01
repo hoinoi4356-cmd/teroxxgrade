@@ -1,0 +1,14 @@
+# Службові файли перевірок — не публікуємо
+selftest.html
+start.bat
+_*.html
+
+# ОС
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Редактори
+.vscode/
+.idea/
+*.swp
