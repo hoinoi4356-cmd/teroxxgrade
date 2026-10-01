@@ -970,11 +970,32 @@
 
         if (sel && list.length) {
           const src = sel.item.price;
+          const balance = S.getAccount().balance;
+          const nominal = d.kind === 'odds' ? d.value / 100 : 0;
+
           const hit = list.filter(function (c) { return matches(c.item, src); });
-          // за замовчуванням беремо найдешевший із відповідного діапазону:
-          // так ціна лишається близькою до потрібної, а шанс — у смузі
-          const pool = hit.length ? hit : list;
-          pick = pool[pool.length - 1] || null;
+
+          /* Список candidates відсортовано від найдешевшого (шанс найбільший)
+             до найдорожчого. Для відсотків беремо предмет, реальний шанс
+             якого найближчий до напису на кнопці («35%» → ~35%), для
+             множників — найдешевший усередині смуги.
+
+             Раніше тут стояло pool[pool.length - 1], тобто останній
+             елемент: найдорожчий предмет каталогу за 12 953 800 TX.
+             Кнопка «X4» змушувала платити найдорожчу ціну з усіх можливих
+             і ніколи не спрацьовувала. */
+          const near = d.kind === 'odds'
+            ? hit.slice().sort(function (a, b) {
+                return Math.abs(a.odds - nominal) - Math.abs(b.odds - nominal);
+              })
+            : hit;
+
+          const pool = near.length ? near : list;
+          // і навіть якщо смуга дорога — беремо те, що реально по кишенці
+          const affordable = pool.filter(function (c) {
+            return (c.item.price - src) <= balance;
+          });
+          pick = (affordable[0] || pool[0]) || null;
         }
 
         if (!pick) {
@@ -1356,7 +1377,7 @@
    */
   function promoHint(account) {
     const vb = S.videoBonus();
-    const parts = ['Промокод — ' + formatNumber(D.PROMO_REWARD) + ' ' + CUR + '.'];
+    const parts = ['Промокод — ' + formatNumber(RG.DATA.PROMO_REWARD) + ' ' + CUR + '.'];
     if (vb.videos.length) {
       parts.push(vb.ready
         ? 'Перегляньте ролик — ' + formatNumber(vb.amount) + ' ' + CUR + '.'
@@ -1524,9 +1545,16 @@
         <div class="profile-row">
           <input class="input" id="name" value="${escapeHtml(account.name)}" maxlength="24" aria-label="Ім'я">
           <button class="btn btn--ghost" type="button" data-act="rename">Зберегти</button>
+          ${S.isAdmin(account)
+            ? `<a class="btn btn--primary" href="#/admin">${icon('gift', 16)} Адмінка</a>`
+            : ''}
           <button class="btn btn--ghost btn--danger" type="button" data-act="logout">${icon('logout', 16)} Вийти</button>
           <button class="btn btn--ghost btn--danger" type="button" data-act="reset">Скинути акаунт</button>
         </div>
+        ${S.isAdmin(account)
+          ? `<p class="profile-admin">${icon('info', 14)} Ви увійшли як автор. Гравці, пасхалки й ручне нарахування TX — на
+             <a href="#/admin">сторінці адмінки</a>.</p>`
+          : ''}
       </section>`;
 
     /* --- Реклама: нагорода за перегляд --- */
@@ -2298,6 +2326,22 @@
       </div>` : `
       <div class="panel"><p class="panel__hint">${icon('warn', 16)} Акаунтів поки немає. Створіть перший на сторінці
         <a href="#/login">входу</a> — і він з’явиться в таблиці.</p></div>`}
+
+      <!-- Чесна відмова: без сервера чужих акаунтів не існує. -->
+      ${sum.rows.length > 1 ? '' : `
+      <div class="lead-note">
+        ${icon('info', 16)}
+        <div>
+          <b>Чому тут лише свої акаунти</b><br>
+          Сайт працює без сервера: кожен акаунт лежить у пам’яті того браузера,
+          де його створили. Ваш комп’ютер не бачить акаунтів інших людей —
+          так само, як інші не бачать ваших. Спільний лідерборд потребує сервера
+          з базою даних, а це вже не статичний сайт.
+          ${sum.rows.length > 1
+            ? ''
+            : '<br>Створіть тут кілька акаунтів через <a href="#/login">вхід</a> — тоді таблиця покаже їх усі.'}
+        </div>
+      </div>`}
 
       <p class="lead-note">
         ${icon('warn', 15)}

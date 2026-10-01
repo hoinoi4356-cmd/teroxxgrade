@@ -1323,6 +1323,18 @@ main { flex: 1; }
 .tabs__btn.is-on { background: var(--bg-block); color: var(--text); box-shadow: var(--shadow-sm); }
 .tabpane[hidden] { display: none; }
 
+/* чесна примітка під лідербордом */
+.lead-note {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-top: var(--sp-4); padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--bg-secondary);
+  color: var(--text-dim); font-size: 12.5px; line-height: 1.6;
+}
+.lead-note svg { flex-shrink: 0; margin-top: 2px; color: var(--blue); }
+.lead-note b { color: var(--text); font-size: 12.5px; }
+.lead-note a { color: var(--accent); text-decoration: underline; }
+
 /* --------------------------- гравці й нарахування ------------------------- */
 .admin-stats {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
