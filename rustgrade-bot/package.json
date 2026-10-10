@@ -1,0 +1,21 @@
+{
+  "name": "rustgrade-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Free custom Discord <-> Rust bridge bot: two-way team/clan chat, event alerts, player tracking, in-game commands and a live map.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "pair-register": "rustplus --config-file=./data/rustplus-credentials.json fcm-register",
+    "pair-listen": "node scripts/pair-listen.js",
+    "check": "node --check src/index.js && node --check src/rustplus-manager.js && node --check src/discord-bot.js && node --check src/game-commands.js && node --check src/web-map.js"
+  },
+  "dependencies": {
+    "@liamcottle/rustplus.js": "^2.5.0",
+    "discord.js": "^14.16.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

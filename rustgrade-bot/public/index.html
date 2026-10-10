@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rust — живая карта</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">RUST<span>MAP</span></div>
+    <div id="serverName" class="server">—</div>
+    <div class="stats">
+      <span id="pop" class="stat">0/0</span>
+      <span id="wipe" class="stat">—</span>
+      <span id="updated" class="stat muted">—</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="mapframe">
+      <div id="map" class="map">
+        <img id="mapimg" alt="map" />
+        <div id="overlay" class="overlay"></div>
+        <div id="empty" class="empty">Карта недоступна (сервер ещё не отдал изображение)</div>
+      </div>
+    </div>
+
+    <aside class="side">
+      <h3>Онлайн сервера (6 ч)</h3>
+      <canvas id="popchart" class="popchart"></canvas>
+      <h3>Статистика команды</h3>
+      <ul id="stats" class="list"></ul>
+      <h3>Игроки (<span id="peopleCount">0</span>)</h3>
+      <ul id="people" class="list"></ul>
+      <h3>Команда</h3>
+      <ul id="team" class="list"></ul>
+      <h3>События</h3>
+      <ul id="events" class="list"></ul>
+      <h3>Смерти</h3>
+      <ul id="deaths" class="list"></ul>
+      <h3>Метки</h3>
+      <ul id="notes" class="list"></ul>
+    </aside>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

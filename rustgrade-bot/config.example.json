@@ -1,0 +1,39 @@
+{
+  "discord": {
+    "token": "PASTE_YOUR_DISCORD_BOT_TOKEN",
+    "guildId": "",
+    "channels": {
+      "teamChat": "",
+      "clanChat": "",
+      "events": "",
+      "deaths": "",
+      "alerts": "",
+      "status": ""
+    }
+  },
+  "rustplus": {
+    "serverIp": "",
+    "appPort": "",
+    "playerId": "",
+    "playerToken": ""
+  },
+  "accounts": [],
+  "settings": {
+    "prefix": "!",
+    "botName": "RustBot",
+    "relayDiscordToGame": true,
+    "relayGameToDiscord": true,
+    "relayClanChat": true,
+    "discordToGameFormat": "[Discord] {author}: {message}",
+    "pollMapMarkersSeconds": 20,
+    "webMap": {
+      "enabled": true,
+      "port": 8787,
+      "publicUrl": ""
+    },
+    "eventMarkerTypes": [3, 4, 5, 6, 7, 8],
+    "notifyEventsToGame": true,
+    "notifyDeathsToGame": true,
+    "devices": []
+  }
+}

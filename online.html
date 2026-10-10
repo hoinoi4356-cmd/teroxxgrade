@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Онлайн стріму</title>
+  <!--
+    Лічильник глядачів Twitch-стріму. Відкривається online-window.bat
+    у маленькому вікні поверх усіх вікон, або джерелом «Браузер» в OBS.
+    Параметри: ?ch=1teroxx&big=1 (великий шрифт для оверлея в OBS)
+  -->
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      background: transparent;
+      font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+      user-select: none;
+      overflow: hidden;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+    #card {
+      background: rgba(24, 24, 27, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+      padding: 14px 26px;
+      text-align: center;
+      min-width: 170px;
+    }
+    #num {
+      font-size: 42px;
+      font-weight: 900;
+      line-height: 1.1;
+      color: #00e5a0;
+    }
+    #num.off { color: #ff5c5c; font-size: 26px; padding: 8px 0; }
+    #label {
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #adadb8;
+      margin-top: 2px;
+    }
+    #title {
+      font-size: 11px;
+      color: #7d7d8a;
+      margin-top: 6px;
+      max-width: 240px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* режим оверлея в OBS: ?big=1 — велика цифра без картки */
+    body.big #card { background: none; border: none; box-shadow: none; padding: 0; }
+    body.big #num { font-size: 96px; text-shadow: 0 2px 12px rgba(0,0,0,0.8); }
+    body.big #label { font-size: 18px; text-shadow: 0 2px 8px rgba(0,0,0,0.8); }
+    body.big #title { display: none; }
+  </style>
+</head>
+<body>
+  <div id="card">
+    <div id="num">…</div>
+    <div id="label">глядачів</div>
+    <div id="title"></div>
+  </div>
+
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var ch = (q.get('ch') || '1teroxx').toLowerCase().replace(/[^a-z0-9_]/g, '');
+      if (q.get('big') === '1') document.body.classList.add('big');
+      document.title = 'Онлайн — ' + ch;
+
+      var num   = document.getElementById('num');
+      var label = document.getElementById('label');
+      var title = document.getElementById('title');
+
+      function tick() {
+        fetch('/api/viewers?ch=' + encodeURIComponent(ch))
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (!d || !d.ok) { num.textContent = '—'; return; }
+            if (!d.live) {
+              num.className = 'off';
+              num.textContent = 'НЕ В ЕФІРІ';
+              label.textContent = ch;
+              title.textContent = '';
+              return;
+            }
+            num.className = '';
+            num.textContent = d.viewers;
+            label.textContent = 'глядачів';
+            title.textContent = d.title || '';
+          })
+          .catch(function () {
+            num.className = 'off';
+            num.textContent = 'СЕРВЕР?';
+            label.textContent = 'запустіть start-chat.bat';
+          });
+      }
+
+      tick();
+      setInterval(tick, 8000);
+    })();
+  </script>
+</body>
+</html>
