@@ -62,7 +62,7 @@ async function main() {
   managers.forEach((manager, i) => {
     const account = accounts[i];
     const tag = account.name || `#${i + 1}`;
-    const gameCommands = new GameCommands({ manager, config, webMap, analytics, steam, players });
+    const gameCommands = new GameCommands({ manager, config, webMap, analytics, steam, players, discord });
 
     manager.on('connected', async () => {
       const info = await manager.getInfoAsync();
@@ -569,6 +569,31 @@ async function handleSlash(interaction, { managers, primary, webMap, analytics, 
         }
         embed.setFooter({ text: `Steam ID: ${steamId}${entry.online ? '' : ' • маршрут копится по мере игры'}` });
         return interaction.editReply({ embeds: [embed] });
+      }
+      case 'link': {
+        if (!players) return interaction.reply({ content: 'Реестр игроков недоступен.', ephemeral: true });
+        const nick = (interaction.options.getString('nick') || '').trim();
+        const hit = players.find(nick)[0];
+        if (!hit) {
+          return interaction.reply({
+            content: `Не нашёл игрока \`${nick}\`. Бот должен был видеть тебя в игре (команда/чат) — напиши точный ник, как в команде.`,
+            ephemeral: true,
+          });
+        }
+        players.link(hit.steamId, interaction.user.id);
+        return interaction.reply({
+          content: `✅ Привязал **${hit.name}** к твоему Discord. Теперь \`!leader\` в игре будет приходить тебе в личку.`,
+          ephemeral: true,
+        });
+      }
+      case 'unlink': {
+        if (!players) return interaction.reply({ content: 'Реестр игроков недоступен.', ephemeral: true });
+        const mine = players
+          .list()
+          .filter((e) => String(e.discordId || '') === interaction.user.id);
+        if (!mine.length) return interaction.reply({ content: 'У тебя ничего не привязано.', ephemeral: true });
+        for (const e of mine) players.unlink(e.steamId);
+        return interaction.reply({ content: 'Отвязал. Лидерка снова будет в командном чате.', ephemeral: true });
       }
       case 'players': {
         if (!players) return interaction.reply({ content: 'Реестр игроков недоступен.', ephemeral: true });

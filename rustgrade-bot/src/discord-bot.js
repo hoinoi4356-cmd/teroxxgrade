@@ -99,6 +99,20 @@ class DiscordBot extends EventEmitter {
     return this.sendToChannel(channelId, { embeds: [embed] });
   }
 
+  // Личное сообщение игроку (для лидерки по !leader из игры).
+  async sendDM(userId, payload) {
+    if (!userId) return null;
+    await this._waitReady();
+    try {
+      const user = await this.client.users.fetch(String(userId));
+      if (!user) return null;
+      return await user.send(payload);
+    } catch (err) {
+      log.error(`Discord: DM ${userId} не удалось:`, err.message);
+      return null;
+    }
+  }
+
   async registerSlashCommands() {
     const body = this.slashDefinition();
     const rest = new REST({ version: '10' }).setToken(this.config.discord.token);
@@ -175,6 +189,17 @@ class DiscordBot extends EventEmitter {
         .setDescription('Кого бот видел: кто онлайн и когда заходил')
         .toJSON(),
       new SlashCommandBuilder().setName('map').setDescription('Ссылка на живую карту сервера').toJSON(),
+      new SlashCommandBuilder()
+        .setName('link')
+        .setDescription('Привязать свой ник в Rust — лидерка (!leader) будет приходить тебе в личку')
+        .addStringOption((o) =>
+          o.setName('nick').setDescription('Твой ник в игре (как в команде)').setRequired(true)
+        )
+        .toJSON(),
+      new SlashCommandBuilder()
+        .setName('unlink')
+        .setDescription('Отвязать Discord от ника в Rust (лидерка снова в командный чат)')
+        .toJSON(),
     ];
   }
 
