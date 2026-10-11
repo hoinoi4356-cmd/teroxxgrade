@@ -296,7 +296,7 @@ async function main() {
   process.on('SIGTERM', shutdown);
 }
 
-async function handleSlash(interaction, { managers, primary, webMap, analytics, steam, players }) {
+async function handleSlash(interaction, { managers, primary, webMap, discord, config, analytics, steam, players }) {
   // если аккаунтов нет — сообщаем
   const connectedManagers = managers.filter((m) => m.connected);
   const manager = connectedManagers[0] || primary;
