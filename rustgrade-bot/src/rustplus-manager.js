@@ -429,6 +429,12 @@ class RustPlusManager extends EventEmitter {
     return [...this._notes.values()];
   }
 
+  // Актуальний стан складу команди з останнього опитування teamInfo:
+  // steamId, name, isOnline, isAlive, x, y, deathTime.
+  teamMemberStates() {
+    return [...this._lastTeamState.values()];
+  }
+
   _detectTeamChanges(team) {
     const members = team.members || [];
     const now = new Map();

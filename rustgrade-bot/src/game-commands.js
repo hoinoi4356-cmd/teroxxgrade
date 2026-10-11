@@ -1,7 +1,14 @@
 'use strict';
 
-const { markerLabel, gridLabel } = require('./markers');
+const { markerLabel, gridLabel, GRID_DIAMETER } = require('./markers');
 const { describeTime, mskTime } = require('./time-utils');
+
+// «A»->0, «Z»->25, «AA»->26 … — зворотний бік gridLabel()
+function lettersToIndex(s) {
+  let v = 0;
+  for (const ch of String(s || '').toUpperCase()) v = v * 26 + (ch.charCodeAt(0) - 64);
+  return v - 1;
+}
 
 /**
  * In-game team chat commands. A player types "!pop" etc. and the bot answers
@@ -30,7 +37,7 @@ class GameCommands {
 
     switch (cmd) {
       case 'help':
-        return this._reply('Команды: !pop !time !online !events !map !wipe !devices !switch !stats !player !track !leader !players');
+        return this._reply('Команды: !pop !time !online !events !map !wipe !stats !player !track !leader !players !near !offline !warn !grid');
       case 'pop':
         return this._cmdPop();
       case 'time':
@@ -60,6 +67,14 @@ class GameCommands {
         return this._cmdLeader(args, name);
       case 'players':
         return this._cmdPlayers();
+      case 'near':
+        return this._cmdNear(args, steamId);
+      case 'offline':
+        return this._cmdOffline();
+      case 'warn':
+        return this._cmdWarn(args);
+      case 'grid':
+        return this._cmdGrid(args);
       default:
         return undefined;
     }
@@ -174,6 +189,76 @@ class GameCommands {
     if (!all.length) return this._reply('Пока никого не видел.');
     const online = all.filter((e) => e.online).map((e) => e.name);
     this._reply(`В сети: ${online.length ? online.join(', ') : 'никого'} | в базе: ${all.length}`);
+  }
+
+  // Кто из команды рядом (по последним данным о составе — обновляются каждые ~5 с).
+  _cmdNear(args, steamId) {
+    const radius = Math.min(500, Math.max(10, parseInt(args[0], 10) || 100));
+    const states =
+      (this.manager && typeof this.manager.teamMemberStates === 'function'
+        ? this.manager.teamMemberStates()
+        : []) || [];
+    const me = states.find((s) => String(s.steamId) === String(steamId));
+    if (!me || me.x == null || me.y == null) {
+      return this._reply('Твоя позиция недоступна (нет данных о команде).');
+    }
+    const dist = (o) => Math.round(Math.hypot(Number(o.x) - Number(me.x), Number(o.y) - Number(me.y)));
+    const near = states
+      .filter((o) => o.isOnline && String(o.steamId) !== String(steamId) && o.x != null && o.y != null && dist(o) <= radius)
+      .sort((a, b) => dist(a) - dist(b));
+    if (!near.length) return this._reply(`Рядом (до ${radius}м) никого из команды.`);
+    const lines = near.map((o) => `${o.name} ${dist(o)}м`);
+    const head = `Рядом (до ${radius}м):`;
+    const parts = this._chunks(lines);
+    this._reply(`${head} ${parts.shift() || ''}`.trim());
+    for (const c of parts) this._reply(c);
+  }
+
+  // Кто из команды офлайн и как давно вышел.
+  _cmdOffline() {
+    if (!this.players) return this._reply('Реестр игроков недоступен.');
+    const off = this.players.list().filter((e) => e.team && !e.online);
+    if (!off.length) return this._reply('Все из команды в сети.');
+    const lines = off.map((e) => `${e.name} (вышел ${this._ago(e.lastOut || e.lastSeen)})`);
+    const parts = this._chunks(lines);
+    this._reply(`Офлайн: ${parts.shift() || ''}`.trim());
+    for (const c of parts) this._reply(c);
+  }
+
+  // Таймер-напоминание: !warn <минут> <текст>.
+  _cmdWarn(args) {
+    const mins = parseInt(args[0], 10);
+    const text = args.slice(1).join(' ').trim();
+    if (!Number.isFinite(mins) || mins < 1 || mins > 1440 || !text) {
+      return this._reply('Формат: !warn <минут> <текст> (1–1440)');
+    }
+    const finalMsg = `[Напоминание] ${text}`;
+    setTimeout(() => this.manager.sendTeamMessage(finalMsg), mins * 60000);
+    this._reply(`Напишу «${finalMsg}» через ${mins} мин.`);
+  }
+
+  // Координаты <-> квадрат карты: !grid X Y или !grid A1.
+  _cmdGrid(args) {
+    const mapSize = this.manager.mapSize || 0;
+    if (!mapSize) return this._reply('Размер карты неизвестен.');
+    const [a, b] = args;
+    if (a && b && Number.isFinite(Number(a)) && Number.isFinite(Number(b))) {
+      return this._reply(`Квадрат: ${gridLabel(Number(a), Number(b), mapSize)}`);
+    }
+    const m = /^([A-Za-z]+)(\d+)$/.exec(String(a || ''));
+    if (m) {
+      const colIdx = lettersToIndex(m[1]);
+      const row = parseInt(m[2], 10);
+      const cx = (colIdx + 0.5) * GRID_DIAMETER;
+      const cy = mapSize - (row + 0.5) * GRID_DIAMETER;
+      if (cx < 0 || cx > mapSize || cy < 0 || cy > mapSize) {
+        return this._reply(`Квадрат "${m[0].toUpperCase()}" вне карты.`);
+      }
+      return this._reply(
+        `${m[0].toUpperCase()} — центр: ${Math.round(cx)} ${Math.round(cy)} ${gridLabel(cx, cy, mapSize)}`
+      );
+    }
+    return this._reply('Формат: !grid X Y (координаты) или !grid A1 (квадрат)');
   }
 
   // Разбивает строки на сообщения по лимиту чата Rust (128 символов).
