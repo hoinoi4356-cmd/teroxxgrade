@@ -277,7 +277,7 @@ class GameCommands {
       }
     }
     const at = grid ? ` Квадрат ${grid}` : '';
-    this._reply(`[РЕЙД!] Нас рейдят!${at} (${who || '?'})`);
+    this._reply(`[ТРЕВОГА] НАС РЕЙДЯТ!${at} — вызов: ${who || '?'}`.slice(0, 128));
     if (!this.discord) return;
     const ch =
       (this.config.discord.channels && this.config.discord.channels.raid) ||
@@ -286,7 +286,7 @@ class GameCommands {
     if (!ch) return;
     this.discord.sendToChannel(
       String(ch),
-      `@everyone 🚨 **РЕЙД! Нас рейдят!**${at} • вызов от **${who || '?'}**`
+      `@everyone 🚨🚨🚨 **НАС РЕЙДЯТ!** 🚨🚨🚨${at}\nТревогу поднял **${who || '?'}** — все к базе!`
     );
   }
 
