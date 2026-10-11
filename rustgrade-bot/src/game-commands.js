@@ -38,7 +38,7 @@ class GameCommands {
 
     switch (cmd) {
       case 'help':
-        return this._reply('Команды: !pop !time !online !events !map !wipe !stats !player !track !leader !players !near !offline !warn !grid !raid !afk');
+        return this._reply('Команды: !pop !time !online !events !map !wipe !stats !track !leader !players !near !offline !warn !grid !raid !afk');
       case 'pop':
         return this._cmdPop();
       case 'time':
@@ -52,15 +52,8 @@ class GameCommands {
         return this._cmdMap();
       case 'wipe':
         return this._cmdWipe();
-      case 'devices':
-        return this._cmdDevices();
-      case 'switch':
-        return this._cmdSwitch(args);
       case 'stats':
         return this._cmdStats(args);
-      case 'player':
-      case 'steam':
-        return this._cmdPlayer(args);
       case 'track':
         return this._cmdTrack(args);
       case 'leader':
@@ -369,65 +362,6 @@ class GameCommands {
     this._reply(s);
   }
 
-  async _cmdPlayer(args) {
-    const query = (args[0] || '').trim();
-    if (!query) return this._reply('Формат: !player <ник>');
-    if (!this.steam) return this._reply('Steam недоступен.');
-    let steamId = null;
-    if (/^\d{17}$/.test(query)) {
-      steamId = query;
-    } else if (this.analytics) {
-      const members = this.analytics.leaderboard();
-      const q = query.toLowerCase();
-      const found =
-        members.find((m) => (m.name || '').toLowerCase() === q) ||
-        members.find((m) => (m.name || '').toLowerCase().includes(q));
-      if (found) steamId = found.steamId;
-    }
-    if (!steamId && this.players) {
-      const hit = this.players.find(query)[0];
-      if (hit) steamId = hit.steamId;
-    }
-    if (!steamId) return this._reply(`Игрок "${query}" не найден. Нужен Steam ID.`);
-    const p = await this.steam.get(steamId);
-    if (!p) return this._reply('Профиль Steam недоступен.');
-    const hours = p.rustHours != null ? `${p.rustHours}ч Rust` : 'часы Rust скрыты';
-    const vac = p.vacBanned ? ' | VAC-бан' : '';
-    let srv = '';
-    if (this.analytics) {
-      const an = this.analytics.leaderboard().find((x) => x.steamId === steamId);
-      if (an) {
-        srv = ` | ${an.online ? 'в игре' : 'офлайн'} ${this._fmtDur(an.onlineSeconds)} ☠${an.deaths}`;
-        const mapSize = this.manager.mapSize || 0;
-        if (an.lastPos && mapSize) srv += ` ${gridLabel(an.lastPos.x, an.lastPos.y, mapSize)}`;
-      }
-    }
-    this._reply(`${p.name || query}: ${hours}${vac}${srv}`);
   }
-
-  async _cmdDevices() {
-    const devices = this.config.settings.devices || [];
-    if (!devices.length) return this._reply('Smart-устройства не настроены.');
-    const names = devices.map((d) => (typeof d === 'object' ? d.name || d.id : d)).join(', ');
-    this._reply(`Устройства: ${names}`);
-  }
-
-  async _cmdSwitch(args) {
-    const [actionRaw, nameRaw] = args;
-    const action = (actionRaw || '').toLowerCase();
-    if (!['on', 'off'].includes(action) || !nameRaw) {
-      return this._reply('Формат: !switch on|off <название>');
-    }
-    const devices = this.config.settings.devices || [];
-    const target = devices.find((d) => {
-      const n = typeof d === 'object' ? d.name || String(d.id) : String(d);
-      return n.toLowerCase() === nameRaw.toLowerCase();
-    });
-    if (!target) return this._reply(`Устройство "${nameRaw}" не найдено.`);
-    const id = typeof target === 'object' ? target.id : target;
-    const ok = await this.manager.turnSmartSwitch(Number(id), action === 'on');
-    this._reply(ok ? `${nameRaw}: ${action.toUpperCase()}` : `Не удалось переключить ${nameRaw}`);
-  }
-}
 
 module.exports = GameCommands;
