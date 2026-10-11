@@ -30,7 +30,7 @@ class GameCommands {
 
     switch (cmd) {
       case 'help':
-        return this._reply('Команды: !pop !time !online !events !map !wipe !devices !switch !stats !player !track !players');
+        return this._reply('Команды: !pop !time !online !events !map !wipe !devices !switch !stats !player !track !leader !players');
       case 'pop':
         return this._cmdPop();
       case 'time':
@@ -55,6 +55,9 @@ class GameCommands {
         return this._cmdPlayer(args);
       case 'track':
         return this._cmdTrack(args);
+      case 'leader':
+      case 'top':
+        return this._cmdLeader(args, name);
       case 'players':
         return this._cmdPlayers();
       default:
@@ -171,6 +174,40 @@ class GameCommands {
     if (!all.length) return this._reply('Пока никого не видел.');
     const online = all.filter((e) => e.online).map((e) => e.name);
     this._reply(`В сети: ${online.length ? online.join(', ') : 'никого'} | в базе: ${all.length}`);
+  }
+
+  // Разбивает строки на сообщения по лимиту чата Rust (128 символов).
+  _chunks(lines, max = 120) {
+    const out = [];
+    let cur = '';
+    for (const l of lines) {
+      const cand = cur ? `${cur}; ${l}` : l;
+      if (cand.length > max) {
+        if (cur) out.push(cur);
+        cur = l;
+      } else {
+        cur = cand;
+      }
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+
+  // Лидерка — по запросу игрока (адресуем тому, кто написал команду).
+  _cmdLeader(args, who) {
+    if (!this.analytics) return this._reply('Статистика недоступна.');
+    const members = this.analytics.leaderboard();
+    if (!members.length) return this._reply('Статистики пока нет.');
+    let n = parseInt(args[0], 10);
+    if (!Number.isFinite(n) || n < 1) n = 5;
+    n = Math.min(10, n);
+    const lines = members
+      .slice(0, n)
+      .map((m, i) => `${i + 1}.${m.name} ${this._fmtDur(m.onlineSeconds)}${m.online ? '*' : ''}`);
+    const chunks = this._chunks(lines);
+    const head = `${who ? who + ', ' : ''}лидерка (наиграно):`;
+    this._reply(`${head} ${chunks.shift() || ''}`.trim());
+    for (const c of chunks) this._reply(c);
   }
 
   _cmdTrack(args) {

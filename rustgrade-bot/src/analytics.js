@@ -33,8 +33,51 @@ class Analytics {
         if (!Array.isArray(this.data.pop)) this.data.pop = [];
         if (!this.data.members) this.data.members = {};
         if (!this.data.paths) this.data.paths = {};
-        for (const m of Object.values(this.data.members)) {
+        // Одноразова чистка статистики сессий (портилась частими перезапусками).
+        // Смерти, маршрути и график онлайна сохраняем.
+        if (!this.data.sessionFix) {
+          for (const m of Object.values(this.data.members)) {
+            m.onlineSeconds = 0;
+            m.sessions = 0;
+            m.history = [];
+            m.lastConnected = 0;
+            m.lastDisconnected = 0;
+            m.currentSessionStart = 0;
+            m.online = false;
+          }
+          this.data.sessionFix = 1;
+        }
+        // Восстанавливаем открытые сессии после перезапуска бота, чтобы
+        // «наиграно» и «сессий» не сбрасывались/не дублировались.
+        // Простой бота (пока процесс был выключен) в наигранное НЕ засчитываем.
+        const nowLoad = Date.now();
+        for (const [id, m] of Object.entries(this.data.members)) {
           if (!Array.isArray(m.history)) m.history = [];
+          // чистим «зависшие» открытые записи (оставляем открытой только последнюю)
+          for (let i = 0; i < m.history.length; i++) {
+            const s = m.history[i];
+            if (s && !s.end && i < m.history.length - 1) {
+              s.end = (m.history[i + 1] && m.history[i + 1].start) || s.start;
+            }
+          }
+          const last = m.history.length ? m.history[m.history.length - 1] : null;
+          const open = last && !last.end;
+          if (open) {
+            const start = m.currentSessionStart || last.start || nowLoad;
+            const lastSeen = m.lastSeen || start;
+            // засчитываем ту часть сессии, что бот успел увидеть до перезапуска
+            m.onlineSeconds = (m.onlineSeconds || 0) + Math.max(0, Math.round((lastSeen - start) / 1000));
+            // продолжаем ту же сессию с текущего момента
+            m.currentSessionStart = nowLoad;
+            last.start = nowLoad;
+            this.onlineSince.set(id, nowLoad);
+            m.online = true;
+          } else {
+            m.currentSessionStart = 0;
+            m.online = false;
+          }
+          // сессий = число записей в истории (единый источник правды)
+          m.sessions = m.history.length;
         }
       }
     } catch (_) {
@@ -71,7 +114,7 @@ class Analytics {
     const id = String(steamId);
     let m = this.data.members[id];
     if (!m) {
-      m = { name: name || '?', onlineSeconds: 0, sessions: 0, deaths: 0, lastSeen: 0, history: [] };
+      m = { name: name || '?', onlineSeconds: 0, sessions: 0, deaths: 0, lastSeen: 0, online: false, currentSessionStart: 0, history: [] };
       this.data.members[id] = m;
     }
     if (!Array.isArray(m.history)) m.history = [];
@@ -86,22 +129,29 @@ class Analytics {
     const now = Date.now();
     if (online) {
       if (!this.onlineSince.has(id)) {
+        // реальный вход (переход офлайн -> онлайн), а не перезапуск бота
         this.onlineSince.set(id, now);
-        m.sessions = (m.sessions || 0) + 1;
+        m.online = true;
+        m.currentSessionStart = now;
         m.lastConnected = now;
-        // нова сесія: фіксуємо час входу (end=0 — ще в грі)
         m.history.push({ start: now, end: 0 });
-        if (m.history.length > 30) m.history.splice(0, m.history.length - 30);
+        if (m.history.length > 200) m.history.splice(0, m.history.length - 200);
       }
       m.lastSeen = now;
     } else if (this.onlineSince.has(id)) {
+      // реальный выход: закрываем сессию
       m.onlineSeconds = (m.onlineSeconds || 0) + Math.round((now - this.onlineSince.get(id)) / 1000);
       this.onlineSince.delete(id);
-      m.lastSeen = now;
-      m.lastDisconnected = now;
       const last = m.history[m.history.length - 1];
       if (last && !last.end) last.end = now;
+      m.currentSessionStart = 0;
+      m.online = false;
+      m.lastSeen = now;
+      m.lastDisconnected = now;
+    } else {
+      m.online = false;
     }
+    m.sessions = m.history.length;
     this._dirty = true;
   }
 
