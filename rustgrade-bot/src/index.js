@@ -133,9 +133,12 @@ async function main() {
       const grid = gridLabel(x || 0, y || 0, manager.mapSize);
       chatLog.line(`[Смерть] ${name} умер — ${grid}`, manager.accountName);
       if (ch('deaths')) {
+        // Если игрок привязал Steam к Discord (/link) — пингуем его.
+        const linked = players.get(steamId);
+        const mention = linked && linked.discordId ? ` <@${linked.discordId}>` : '';
         const embed = new EmbedBuilder()
           .setTitle('☠️ Смерть тиммейта')
-          .setDescription(`**${name}** умер — квадрат **${grid}**`)
+          .setDescription(`**${name}** умер — квадрат **${grid}**${mention}`)
           .setFooter({ text: tag })
           .setColor(0xf85149)
           .setTimestamp();
@@ -661,6 +664,59 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
       case 'map': {
         const url = webMap.localUrl();
         return interaction.reply({ content: url ? `Живая карта: ${url}` : 'Карта выключена.', ephemeral: true });
+      }
+      case 'link': {
+        const q = (interaction.options.getString('player') || '').trim();
+        if (!q) return interaction.reply({ content: 'Укажи ник, Steam ID или ссылку на профиль.', ephemeral: true });
+        let steamId = null;
+        if (/^\d{17}$/.test(q)) steamId = q;
+        if (!steamId && players) {
+          const hit = players.find(q)[0];
+          if (hit) steamId = hit.steamId;
+        }
+        if (!steamId && steam) steamId = await steam.resolve(q);
+        if (!steamId) {
+          return interaction.reply({ content: `Не нашёл «${q}». Вставь Steam ID (17 цифр) или ссылку на профиль.`, ephemeral: true });
+        }
+        const profile = steam ? await steam.get(steamId) : null;
+        const name = (profile && profile.name) || q;
+        players.linkDiscord(steamId, interaction.user.id, name);
+        return interaction.reply({
+          content: `✅ Привязано: **${name}** (Steam ID \`${steamId}\`) к твоему Discord.\nТеперь при его смерти и для «${name}» в статистике бот знает, что это ты.`,
+          ephemeral: true,
+        });
+      }
+      case 'unlink': {
+        const ok = players.unlinkDiscord(interaction.user.id);
+        return interaction.reply({ content: ok ? '✅ Привязка убрана.' : 'У тебя нет привязки.', ephemeral: true });
+      }
+      case 'who': {
+        const q = (interaction.options.getString('player') || '').trim();
+        if (!q) return interaction.reply({ content: 'Укажи ник или Steam ID.', ephemeral: true });
+        let steamId = null;
+        if (/^\d{17}$/.test(q)) steamId = q;
+        if (!steamId && analytics) {
+          const ql = q.toLowerCase();
+          const hit =
+            analytics.leaderboard().find((m) => m.steamId === q) ||
+            analytics.leaderboard().find((m) => (m.name || '').toLowerCase().includes(ql));
+          if (hit) steamId = hit.steamId;
+        }
+        if (!steamId && players) {
+          const hit = players.find(q)[0];
+          if (hit) steamId = hit.steamId;
+        }
+        if (!steamId) return interaction.reply({ content: `Не нашёл «${q}».`, ephemeral: true });
+        const e = players.get(steamId);
+        const playerName = (e && e.name) || steamId;
+        if (!e || !e.discordId) {
+          return interaction.reply({ content: `**${playerName}** — пока никто не привязан.`, ephemeral: true });
+        }
+        const user = await discord.client.users.fetch(e.discordId).catch(() => null);
+        return interaction.reply({
+          content: `**${playerName}** (${steamId}) — это ${user ? `**${user.username}**` : `<@${e.discordId}>`}.`,
+          ephemeral: true,
+        });
       }
       default:
         return interaction.reply({ content: 'Неизвестная команда.', ephemeral: true });

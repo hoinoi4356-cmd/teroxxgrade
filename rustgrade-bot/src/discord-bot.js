@@ -102,15 +102,14 @@ class DiscordBot extends EventEmitter {
   async registerSlashCommands() {
     const body = this.slashDefinition();
     const rest = new REST({ version: '10' }).setToken(this.config.discord.token);
-    if (this.config.discord.guildId) {
-      await rest.put(
-        Routes.applicationGuildCommands(this.client.user.id, String(this.config.discord.guildId)),
-        { body }
-      );
-    } else {
-      await rest.put(Routes.applicationCommands(this.client.user.id), { body });
+    const targets = [];
+    if (this.config.discord.guildId) targets.push(String(this.config.discord.guildId));
+    for (const g of this.client.guilds.cache.values()) targets.push(String(g.id));
+    const guilds = [...new Set(targets)];
+    for (const gid of guilds) {
+      await rest.put(Routes.applicationGuildCommands(this.client.user.id, gid), { body });
     }
-    log.info(`Discord: зарегистрировано ${body.length} slash-команд`);
+    log.info(`Discord: зарегистрировано ${body.length} slash-команд в ${guilds.length} серверах`);
   }
 
   slashDefinition() {
@@ -185,6 +184,30 @@ class DiscordBot extends EventEmitter {
         .setDescription('Кого бот видел: кто онлайн и когда заходил')
         .toJSON(),
       new SlashCommandBuilder().setName('map').setDescription('Ссылка на живую карту сервера').toJSON(),
+      new SlashCommandBuilder()
+        .setName('link')
+        .setDescription('Привязать свой Steam к Discord (ник, Steam ID или ссылка)')
+        .addStringOption((o) =>
+          o
+            .setName('player')
+            .setDescription('Ник из команды, Steam ID (17 цифр) или ссылка на профиль')
+            .setRequired(true)
+        )
+        .toJSON(),
+      new SlashCommandBuilder()
+        .setName('unlink')
+        .setDescription('Убрать привязку своего Steam')
+        .toJSON(),
+      new SlashCommandBuilder()
+        .setName('who')
+        .setDescription('Кто из Discord привязан к этому Steam-аккаунту')
+        .addStringOption((o) =>
+          o
+            .setName('player')
+            .setDescription('Ник или Steam ID')
+            .setRequired(true)
+        )
+        .toJSON(),
     ];
   }
 

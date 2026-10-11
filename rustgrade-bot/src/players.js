@@ -101,6 +101,28 @@ class PlayerRegistry {
     return this.data[String(steamId)] || null;
   }
 
+  // Привязка Discord-участника к Steam: discordId хранится в карточке игрока.
+  linkDiscord(steamId, discordId, name) {
+    const e = this._entry(steamId, name);
+    if (!e) return null;
+    e.discordId = String(discordId || '');
+    this._dirty = true;
+    return e;
+  }
+
+  unlinkDiscord(discordId) {
+    const e = this.findByDiscordId(discordId);
+    if (!e) return false;
+    delete e.discordId;
+    this._dirty = true;
+    return true;
+  }
+
+  findByDiscordId(discordId) {
+    const id = String(discordId || '');
+    return Object.values(this.data).find((e) => e.discordId === id) || null;
+  }
+
   find(query) {
     const q = String(query || '').trim().toLowerCase();
     if (!q) return [];
