@@ -6,6 +6,11 @@ const log = require('./logger');
 const chatLog = require('./chat-log');
 const { markerLabel, markerTypeName, markerTypeNumber } = require('./markers');
 
+// Пауза перед КОЖНИМ повідомленням бота в чат гри. Бот пише від імені самого
+// гравця, тому його повідомлення й відповідь бота не повинні летіти в межах
+// кулдауну чату Rust (~3 с) — інакше сервер каже «занадто швидко».
+const SEND_INTERVAL_MS = 4000;
+
 /**
  * Thin, resilient wrapper around @liamcottle/rustplus.js.
  *
@@ -306,54 +311,55 @@ class RustPlusManager extends EventEmitter {
     }
     const safe = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 128);
     if (!safe) return false;
-    this._queueSend(safe);
+    this._queueSend(safe, false);
     return true;
-  }
-
-  // Черга відправлень: у Rust кулдаун на командний чат (~3 с),
-  // тож розносимо повідомлення на 4 с.
-  _queueSend(text) {
-    this._sendQueue.push(text);
-    if (this._sendTimer) return;
-    const run = () => {
-      const next = this._sendQueue.shift();
-      if (next === undefined) {
-        this._sendTimer = null;
-        return;
-      }
-      try {
-        this.rust.sendTeamMessage(next);
-        this._sentTexts.set(next, Date.now());
-        for (const [k, t] of this._sentTexts) {
-          if (Date.now() - t > 30000) this._sentTexts.delete(k);
-        }
-        log.info(`Rust+: > ${next}`);
-        chatLog.line(`[Бот${this.accountName ? ` (${this.accountName})` : ''}] ${next}`, this.accountName);
-      } catch (err) {
-        log.error(`Rust+: sendTeamMessage failed: ${next} (${err.message})`);
-      }
-      this._sendTimer = setTimeout(run, 4000);
-    };
-    run();
   }
 
   sendClanMessage(text) {
     if (!this.rust || !this.connected) return false;
     const safe = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 128);
     if (!safe) return false;
+    this._queueSend(safe, true);
+    return true;
+  }
+
+  // Черга відправлень у чат гри. Бот пише від імені самого гравця, тому кожне
+  // повідомлення (і командний, і клановий чат) чекає SEND_INTERVAL_MS — щоб не
+  // влетіти в кулдаун чату (~3 с) разом із командою/повідомленням гравця.
+  _queueSend(text, clan) {
+    this._sendQueue.push({ text, clan });
+    if (this._sendTimer) return;
+    const tick = () => {
+      this._sendTimer = null;
+      const item = this._sendQueue.shift();
+      if (item === undefined) return;
+      this._sendOne(item);
+      if (this._sendQueue.length) this._sendTimer = setTimeout(tick, SEND_INTERVAL_MS);
+    };
+    this._sendTimer = setTimeout(tick, SEND_INTERVAL_MS);
+  }
+
+  _sendOne(item) {
+    const msg = item.text;
     try {
-      if (typeof this.rust.sendClanMessage === 'function') {
-        this.rust.sendClanMessage(safe);
-        chatLog.line(`[Бот → Клан${this.accountName ? ` (${this.accountName})` : ''}] ${safe}`, this.accountName);
-        return true;
+      if (item.clan) {
+        if (typeof this.rust.sendClanMessage === 'function') {
+          this.rust.sendClanMessage(msg);
+        } else {
+          this.rust.sendRequest({ sendClanMessage: { message: msg } }, () => true);
+        }
+        chatLog.line(`[Бот → Клан${this.accountName ? ` (${this.accountName})` : ''}] ${msg}`, this.accountName);
+        return;
       }
-      // fallback: craft the request manually
-      this.rust.sendRequest({ sendClanMessage: { message: safe } }, () => true);
-      chatLog.line(`[Бот → Клан${this.accountName ? ` (${this.accountName})` : ''}] ${safe}`, this.accountName);
-      return true;
+      this.rust.sendTeamMessage(msg);
+      this._sentTexts.set(msg, Date.now());
+      for (const [k, t] of this._sentTexts) {
+        if (Date.now() - t > 30000) this._sentTexts.delete(k);
+      }
+      log.info(`Rust+: > ${msg}`);
+      chatLog.line(`[Бот${this.accountName ? ` (${this.accountName})` : ''}] ${msg}`, this.accountName);
     } catch (err) {
-      log.error('Rust+: sendClanMessage failed:', err.message);
-      return false;
+      log.error(`Rust+: send failed: ${msg} (${err.message})`);
     }
   }
 
