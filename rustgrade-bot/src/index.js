@@ -12,6 +12,7 @@ const { describeTime, mskTime } = require('./time-utils');
 const Analytics = require('./analytics');
 const Steam = require('./steam');
 const PlayerRegistry = require('./players');
+const chatLog = require('./chat-log');
 
 async function main() {
   const loaded = loadConfig();
@@ -106,6 +107,7 @@ async function main() {
     manager.on('markerSpawn', ({ marker }) => {
       const grid = gridLabel(marker.x, marker.y, manager.mapSize);
       const name = marker.name || markerLabelRu(marker.type);
+      chatLog.line(`[Событие] ${name} — ${grid}`);
       if (ch('events')) {
         const embed = new EmbedBuilder()
           .setTitle(`${markerEmoji(marker.type)} ${name}`)
@@ -129,6 +131,7 @@ async function main() {
       analytics.death(steamId, name, x, y);
       players.addDeath(steamId, name);
       const grid = gridLabel(x || 0, y || 0, manager.mapSize);
+      chatLog.line(`[Смерть] ${name} умер — ${grid}`);
       if (ch('deaths')) {
         const embed = new EmbedBuilder()
           .setTitle('☠️ Смерть тиммейта')
@@ -159,6 +162,7 @@ async function main() {
     manager.on('memberOnline', ({ steamId, name, online }) => {
       analytics.memberOnline(steamId, name, online);
       players.setOnline(steamId, name, online);
+      chatLog.line(`[Статус] ${name} ${online ? 'зашёл на сервер' : 'вышел с сервера'}`);
       if (!ch('alerts')) return;
       discord.sendToChannel(
         ch('alerts'),
@@ -208,6 +212,7 @@ async function main() {
     const text = (config.settings.discordToGameFormat || '{author}: {message}')
       .replace('{author}', author)
       .replace('{message}', msg.content);
+    chatLog.line(`[Discord→Игра] ${author}: ${msg.content}`);
     for (const m of managers) m.sendTeamMessage(text);
   });
 
@@ -215,6 +220,7 @@ async function main() {
     if (!config.settings.relayDiscordToGame) return;
     const author = msg.member ? msg.member.displayName : msg.author.username;
     const text = `[Discord] ${author}: ${msg.content}`;
+    chatLog.line(`[Discord→Клан] ${author}: ${msg.content}`);
     for (const m of managers) m.sendClanMessage(text);
   });
 

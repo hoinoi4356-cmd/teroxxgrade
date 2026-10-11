@@ -3,6 +3,7 @@
 const EventEmitter = require('events');
 const RustPlus = require('@liamcottle/rustplus.js');
 const log = require('./logger');
+const chatLog = require('./chat-log');
 const { markerLabel, markerTypeName, markerTypeNumber } = require('./markers');
 
 /**
@@ -143,6 +144,7 @@ class RustPlusManager extends EventEmitter {
       // не реагуємо на власні повідомлення бота (сервер віддає їх назад)
       if (this._isOwnEcho(text)) return;
       log.info(`Chat <${chat.name || 'Unknown'}> ${text}`);
+      chatLog.line(`[Игра] ${chat.name || 'Unknown'}: ${text}`);
       this.emit('teamMessage', {
         steamId: String(chat.steamId || ''),
         name: chat.name || 'Unknown',
@@ -154,10 +156,13 @@ class RustPlusManager extends EventEmitter {
     if (b.clanMessage) {
       const cm = b.clanMessage;
       const chat = cm.message || {};
+      const cname = cm.name || chat.ownerName || 'Unknown';
+      const ctext = (chat.message || '').trim();
+      chatLog.line(`[Клан] ${cname}: ${ctext}`);
       this.emit('clanMessage', {
         steamId: String(cm.playerId || chat.steamId || ''),
-        name: cm.name || chat.ownerName || 'Unknown',
-        text: (chat.message || '').trim(),
+        name: cname,
+        text: ctext,
       });
       return;
     }
@@ -323,6 +328,7 @@ class RustPlusManager extends EventEmitter {
           if (Date.now() - t > 30000) this._sentTexts.delete(k);
         }
         log.info(`Rust+: > ${next}`);
+        chatLog.line(`[Бот${this.accountName ? ` (${this.accountName})` : ''}] ${next}`);
       } catch (err) {
         log.error(`Rust+: sendTeamMessage failed: ${next} (${err.message})`);
       }
@@ -338,10 +344,12 @@ class RustPlusManager extends EventEmitter {
     try {
       if (typeof this.rust.sendClanMessage === 'function') {
         this.rust.sendClanMessage(safe);
+        chatLog.line(`[Бот → Клан${this.accountName ? ` (${this.accountName})` : ''}] ${safe}`);
         return true;
       }
       // fallback: craft the request manually
       this.rust.sendRequest({ sendClanMessage: { message: safe } }, () => true);
+      chatLog.line(`[Бот → Клан${this.accountName ? ` (${this.accountName})` : ''}] ${safe}`);
       return true;
     } catch (err) {
       log.error('Rust+: sendClanMessage failed:', err.message);
