@@ -10,7 +10,8 @@
       "alerts": "",
       "status": "",
       "logs": "",
-      "raid": ""
+      "raid": "",
+      "afk": ""
     },
     "channelsPerAccount": {}
   },

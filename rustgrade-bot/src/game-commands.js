@@ -38,7 +38,7 @@ class GameCommands {
 
     switch (cmd) {
       case 'help':
-        return this._reply('Команды: !pop !time !online !events !map !wipe !stats !player !track !leader !players !near !offline !warn !grid !raid');
+        return this._reply('Команды: !pop !time !online !events !map !wipe !stats !player !track !leader !players !near !offline !warn !grid !raid !afk');
       case 'pop':
         return this._cmdPop();
       case 'time':
@@ -78,6 +78,9 @@ class GameCommands {
         return this._cmdGrid(args);
       case 'raid':
         return this._cmdRaid(args, steamId, name);
+      case 'afk':
+      case 'афк':
+        return this._cmdAfk(args, name);
       default:
         return undefined;
     }
@@ -288,6 +291,25 @@ class GameCommands {
     this.discord.sendToChannel(
       String(ch),
       `@everyone 🚨🚨🚨 **НАС РЕЙДЯТ!** 🚨🚨🚨${at}\nТревогу поднял **${who || '?'}**`
+    );
+  }
+
+  // АФК: пишем в чат команды + в Discord-канал АФК своего сервера.
+  // Канал: свой на акаунт (channelsPerAccount.<имя>.afk) -> общий (channels.afk).
+  _cmdAfk(args, name) {
+    const text = args.join(' ').trim();
+    const who = name || '?';
+    this._reply(`[АФК] ${who}${text ? ' — ' + text : ''}`.slice(0, 128));
+    if (!this.discord) return;
+    const per = (this.config.discord.channelsPerAccount || {})[this.manager.accountName] || {};
+    const ch =
+      per.afk ||
+      (this.config.discord.channels && this.config.discord.channels.afk) ||
+      '';
+    if (!ch) return;
+    this.discord.sendToChannel(
+      String(ch),
+      `⏸ **${who}** — АФК${text ? ': ' + text : ''} • ${this.manager.accountName}`
     );
   }
 
