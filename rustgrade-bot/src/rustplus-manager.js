@@ -310,8 +310,8 @@ class RustPlusManager extends EventEmitter {
     return true;
   }
 
-  // Черга відправлень: Rust має кулдаун на командний чат (~1 c),
-  // тож розносимо повідомлення, щоб відповідь дійшла до всієї тіми.
+  // Черга відправлень: у Rust кулдаун на командний чат (~3 с),
+  // тож розносимо повідомлення на 5 с — щоб уведомлення не губилися.
   _queueSend(text) {
     this._sendQueue.push(text);
     if (this._sendTimer) return;
@@ -332,7 +332,7 @@ class RustPlusManager extends EventEmitter {
       } catch (err) {
         log.error(`Rust+: sendTeamMessage failed: ${next} (${err.message})`);
       }
-      this._sendTimer = setTimeout(run, 1200);
+      this._sendTimer = setTimeout(run, 5000);
     };
     run();
   }
