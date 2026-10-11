@@ -281,12 +281,13 @@ class GameCommands {
     if (!this.discord) return;
     const ch =
       (this.config.discord.channels && this.config.discord.channels.raid) ||
+      (this.config.discord.channels && this.config.discord.channels.teamChat) ||
       (this.config.discord.channels && this.config.discord.channels.alerts) ||
       '';
     if (!ch) return;
     this.discord.sendToChannel(
       String(ch),
-      `@everyone 🚨🚨🚨 **НАС РЕЙДЯТ!** 🚨🚨🚨${at}\nТревогу поднял **${who || '?'}** — все к базе!`
+      `@everyone 🚨🚨🚨 **НАС РЕЙДЯТ!** 🚨🚨🚨${at}\nТревогу поднял **${who || '?'}**`
     );
   }
 
