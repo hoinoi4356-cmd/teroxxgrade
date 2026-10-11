@@ -8,14 +8,13 @@ const { describeTime, mskTime } = require('./time-utils');
  * in team chat. Replies are kept within Rust's 128-char team chat limit.
  */
 class GameCommands {
-  constructor({ manager, config, webMap, analytics, steam, players, discord }) {
+  constructor({ manager, config, webMap, analytics, steam, players }) {
     this.manager = manager;
     this.config = config;
     this.webMap = webMap;
     this.analytics = analytics || null;
     this.steam = steam || null;
     this.players = players || null;
-    this.discord = discord || null;
     this.prefix = (config.settings && config.settings.prefix) || '!';
   }
 
@@ -58,7 +57,7 @@ class GameCommands {
         return this._cmdTrack(args);
       case 'leader':
       case 'top':
-        return this._cmdLeader(args, name, steamId);
+        return this._cmdLeader(args, name);
       case 'players':
         return this._cmdPlayers();
       default:
@@ -194,20 +193,15 @@ class GameCommands {
     return out;
   }
 
-  // Лидерка пачки. Если игрок привязан через /link — уходит ему в личку
-  // Discord (приватно), иначе показывается в командном чате.
-  _cmdLeader(args, who, steamId) {
+  // Лідерка пачки — відповідь у командний чат гри,
+  // звернена до того, хто написав команду.
+  _cmdLeader(args, who) {
     if (!this.analytics) return this._reply('Статистика недоступна.');
     const members = this.analytics.leaderboard();
     if (!members.length) return this._reply('Статистики пока нет.');
     let n = parseInt(args[0], 10);
     if (!Number.isFinite(n) || n < 1) n = 5;
     n = Math.min(10, n);
-    const discordId = this.players && steamId ? this.players.discordIdFor(steamId) : null;
-    if (discordId && this.discord) {
-      this._sendLeaderDM(discordId, members, n, who);
-      return;
-    }
     const lines = members
       .slice(0, n)
       .map((m, i) => `${i + 1}.${m.name} ${this._fmtDur(m.onlineSeconds)}${m.online ? '*' : ''}`);
@@ -215,23 +209,6 @@ class GameCommands {
     const head = `${who ? who + ', ' : ''}лидерка (наиграно):`;
     this._reply(`${head} ${chunks.shift() || ''}`.trim());
     for (const c of chunks) this._reply(c);
-  }
-
-  // Красивая лидерка Embed'ом в личку Discord.
-  _sendLeaderDM(discordId, members, n, who) {
-    const top = members.slice(0, n);
-    const medal = (i) => (i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`);
-    const rows = top.map(
-      (m, i) =>
-        `${medal(i)} **${m.name}** — ${this._fmtDur(m.onlineSeconds)}${m.online ? ' 🟢 в игре' : ''}\n_сессий: ${m.sessions || 0} • смертей: ${m.deaths || 0}_`
-    );
-    const embed = {
-      title: 'Лидерка пачки — наиграно за вайп',
-      color: 0x2ecc71,
-      description: rows.join('\n\n'),
-      footer: { text: `Запросил: ${who || '—'}` },
-    };
-    this.discord.sendDM(discordId, { embeds: [embed] });
   }
 
   _cmdTrack(args) {

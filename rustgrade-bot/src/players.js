@@ -101,29 +101,6 @@ class PlayerRegistry {
     return this.data[String(steamId)] || null;
   }
 
-  // Привязка Discord-аккаунта к SteamID: лидерка (!leader) будет
-  // уходить игроку в личку Discord, а не спамить командный чат.
-  link(steamId, discordUserId) {
-    const e = this.get(steamId);
-    if (!e) return null;
-    e.discordId = String(discordUserId || '');
-    this._dirty = true;
-    return e;
-  }
-
-  unlink(steamId) {
-    const e = this.get(steamId);
-    if (!e) return null;
-    delete e.discordId;
-    this._dirty = true;
-    return e;
-  }
-
-  discordIdFor(steamId) {
-    const e = this.get(steamId);
-    return e ? e.discordId || null : null;
-  }
-
   find(query) {
     const q = String(query || '').trim().toLowerCase();
     if (!q) return [];
