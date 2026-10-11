@@ -125,6 +125,7 @@ class WebMap {
           isOnline: !!m.isOnline,
           isAlive: !!m.isAlive,
           isLeader: String(m.steamId) === String((this.manager.lastTeamInfo || {}).leaderSteamId || ''),
+          path: this.analytics ? this.analytics.pathOf(m.steamId, 60) : [],
         };
       }),
       markers: markers.map((m) => {
@@ -168,6 +169,9 @@ class WebMap {
                 lastSeen: m.lastSeen,
                 steamHours: sp ? sp.rustHours : null,
                 avatar: (sp && sp.avatar) || '',
+                lastPos: m.lastPos || null,
+                lastDeath: m.lastDeath || null,
+                path: this.analytics ? this.analytics.pathOf(m.steamId, 60) : [],
               };
             }),
           }

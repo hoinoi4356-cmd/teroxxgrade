@@ -126,7 +126,7 @@ async function main() {
     });
 
     manager.on('memberDeath', ({ steamId, name, x, y }) => {
-      analytics.death(steamId, name);
+      analytics.death(steamId, name, x, y);
       players.addDeath(steamId, name);
       const grid = gridLabel(x || 0, y || 0, manager.mapSize);
       if (ch('deaths')) {
@@ -171,6 +171,9 @@ async function main() {
       for (const m of (team && team.members) || []) {
         analytics.memberOnline(m.steamId, m.name, m.isOnline);
         players.setOnline(m.steamId, m.name, m.isOnline);
+        if (m.isOnline && m.isAlive && Number.isFinite(Number(m.x)) && Number.isFinite(Number(m.y))) {
+          analytics.position(m.steamId, m.name, m.x, m.y);
+        }
         // прогрев кэша Steam-профилей (команда)
         if (m.steamId) steam.get(m.steamId).catch(() => {});
       }
@@ -389,7 +392,7 @@ async function handleSlash(interaction, { managers, primary, webMap, analytics, 
             const sid = hit ? hit.steamId : /^\d{17}$/.test(query) ? query : steam ? await steam.resolve(query) : null;
             if (sid) {
               await interaction.deferReply({ ephemeral: true });
-              const card = await buildPlayerCard(sid, { analytics, steam });
+              const card = await buildPlayerCard(sid, { analytics, steam, manager });
               return interaction.editReply({ embeds: [card] });
             }
             return interaction.reply({
@@ -468,7 +471,95 @@ async function handleSlash(interaction, { managers, primary, webMap, analytics, 
             content: `Не нашёл «${query}». Вставь Steam ID (17 цифр) или ссылку на профиль.`,
           });
         }
-        const embed = await buildPlayerCard(steamId, { analytics, steam });
+        const embed = await buildPlayerCard(steamId, { analytics, steam, manager });
+        return interaction.editReply({ embeds: [embed] });
+      }
+      case 'track': {
+        const query = (interaction.options.getString('player') || '').trim();
+        if (!query) {
+          return interaction.reply({ content: 'Укажи ник, Steam ID или ссылку на профиль.', ephemeral: true });
+        }
+        if (!analytics) return interaction.reply({ content: 'Аналитика недоступна.', ephemeral: true });
+        await interaction.deferReply({ ephemeral: true });
+
+        const members = analytics.leaderboard();
+        const q = query.toLowerCase();
+        let entry =
+          members.find((m) => m.steamId === query) ||
+          members.find((m) => (m.name || '').toLowerCase() === q) ||
+          members.find((m) => (m.name || '').toLowerCase().includes(q));
+        let steamId = entry ? entry.steamId : null;
+        if (!steamId && players) {
+          const hit = players.find(query)[0];
+          if (hit) steamId = hit.steamId;
+        }
+        if (!steamId && steam) steamId = await steam.resolve(query);
+        if (!steamId) return interaction.editReply({ content: `Не нашёл «${query}».` });
+
+        if (!entry) entry = members.find((m) => m.steamId === steamId) || null;
+        const mapSize = (manager && manager.mapSize) || 0;
+        const gridOf = (p) => (p && mapSize ? gridLabel(p.x, p.y, mapSize) : '?');
+        const sp = steam ? steam.peek(steamId) : null;
+        const name = (sp && sp.name) || (entry && entry.name) || steamId;
+
+        const embed = new EmbedBuilder()
+          .setTitle(`📡 Слежение: ${name}`)
+          .setURL(`https://steamcommunity.com/profiles/${steamId}`)
+          .setColor(entry && entry.online ? 0x3fb950 : 0x8b949e);
+        if (sp && sp.avatar) embed.setThumbnail(sp.avatar);
+
+        if (!entry) {
+          embed.setDescription('Игрока нет в статистике сервера. Позицию можно отслеживать только для участников команды.');
+          embed.setFooter({ text: `Steam ID: ${steamId}` });
+          return interaction.editReply({ embeds: [embed] });
+        }
+
+        const lines = [
+          `${entry.online ? '🟢 **в игре сейчас**' : '⚫ офлайн'}`,
+          `Наиграно за вайп: **${fmtDurLong(entry.onlineSeconds)}** • сессий: **${entry.sessions}**`,
+          `Смертей: **${entry.deaths}** • последний раз: ${entry.online ? 'сейчас' : agoShort(entry.lastSeen)}`,
+        ];
+        embed.addFields({ name: 'Статус', value: lines.join('\n'), inline: false });
+
+        if (entry.online && entry.lastPos) {
+          embed.addFields({
+            name: '📍 Где сейчас',
+            value: `Квадрат **${gridOf(entry.lastPos)}** (${Math.round(entry.lastPos.x)}, ${Math.round(entry.lastPos.y)}) — обновлено ${agoShort(entry.lastPos.t)}`,
+            inline: false,
+          });
+        } else if (entry.lastPos) {
+          embed.addFields({
+            name: '📍 Последняя точка',
+            value: `Квадрат **${gridOf(entry.lastPos)}** — ${agoShort(entry.lastPos.t)}`,
+            inline: false,
+          });
+        }
+        if (entry.lastDeath) {
+          embed.addFields({
+            name: '☠️ Последняя смерть',
+            value: `Квадрат **${gridOf(entry.lastDeath)}** — ${agoShort(entry.lastDeath.t)}`,
+            inline: false,
+          });
+        }
+        if (entry.path && entry.path.length > 2) {
+          const pts = entry.path;
+          const step = Math.max(1, Math.floor(pts.length / 10));
+          const cells = [];
+          for (let i = 0; i < pts.length; i += step) cells.push(gridOf(pts[i]));
+          if (cells[cells.length - 1] !== gridOf(pts[pts.length - 1])) cells.push(gridOf(pts[pts.length - 1]));
+          const first = pts[0];
+          embed.addFields({
+            name: `🗺️ Маршрут (${pts.length} точек, с ${agoShort(first.t)})`,
+            value: cells.join(' → ').slice(0, 1024),
+            inline: false,
+          });
+        } else {
+          embed.setFooter({ text: 'Маршрут появится по мере перемещений (видны только тиммейты).' });
+        }
+        if (sp && sp.rustHours != null) {
+          embed.addFields({ name: '🎮 Rust в Steam', value: `${sp.rustHours.toLocaleString('ru-RU')} ч`, inline: true });
+        }
+        embed.setFooter({ text: `Steam ID: ${steamId}${entry.online ? '' : ' • маршрут копится по мере игры'}` });
         return interaction.editReply({ embeds: [embed] });
       }
       case 'players': {
@@ -526,7 +617,7 @@ function agoShort(ts) {
 }
 
 // Полная карточка игрока: Steam (даже если профиль закрыт — имя и аватар видны) + статистика на сервере.
-async function buildPlayerCard(steamId, { analytics, steam }) {
+async function buildPlayerCard(steamId, { analytics, steam, manager }) {
   const profile = steam ? await steam.get(steamId) : null;
   const an = analytics ? analytics.leaderboard().find((m) => m.steamId === steamId) : null;
 
@@ -560,13 +651,38 @@ async function buildPlayerCard(steamId, { analytics, steam }) {
   }
 
   if (an) {
+    const mapSize = (manager && manager.mapSize) || 0;
+    const gridOf = (p) => (p && mapSize ? gridLabel(p.x, p.y, mapSize) : '?');
+    const statsLines = [
+      `${an.online ? '🟢 в игре' : '⚫ офлайн'}`,
+      `Наиграно (вайп): **${fmtDurLong(an.onlineSeconds)}**`,
+      `Сессий: **${an.sessions}** • Смертей: **${an.deaths}**`,
+      `Последний раз: ${an.online ? 'сейчас' : agoShort(an.lastSeen)}`,
+    ];
+    embed.addFields({ name: '🖥️ На сервере (текущий вайп)', value: statsLines.join('\n'), inline: false });
+
+    // Локация: текущая (если в сети) или последняя известная
+    const locLines = [];
+    if (an.online && Number.isFinite(an.lastPos && an.lastPos.x)) {
+      locLines.push(`Сейчас: квадрат **${gridOf(an.lastPos)}** (${Math.round(an.lastPos.x)}, ${Math.round(an.lastPos.y)})`);
+    } else if (an.lastPos) {
+      locLines.push(`Последняя точка: квадрат **${gridOf(an.lastPos)}** — ${agoShort(an.lastPos.t)}`);
+    }
+    if (an.lastDeath) locLines.push(`Последняя смерть: квадрат **${gridOf(an.lastDeath)}** — ${agoShort(an.lastDeath.t)}`);
+    if (an.path && an.path.length > 2) {
+      // маршрут: показываем каждую N-ю точку гридом (компактно)
+      const pts = an.path;
+      const step = Math.max(1, Math.floor(pts.length / 8));
+      const cells = [];
+      for (let i = 0; i < pts.length; i += step) cells.push(gridOf(pts[i]));
+      if (cells[cells.length - 1] !== gridOf(pts[pts.length - 1])) cells.push(gridOf(pts[pts.length - 1]));
+      locLines.push(`Маршрут (${pts.length} точек): ${cells.join(' → ')}`);
+    }
+    if (locLines.length) embed.addFields({ name: '📍 Отслеживание', value: locLines.join('\n'), inline: false });
+  } else {
     embed.addFields({
-      name: '🖥️ На сервере (текущий вайп)',
-      value:
-        `${an.online ? '🟢 в игре' : '⚫ офлайн'}\n` +
-        `Наиграно: **${fmtDurLong(an.onlineSeconds)}**\n` +
-        `Сессий: **${an.sessions}** • Смертей: **${an.deaths}**\n` +
-        `Последний раз: ${an.online ? 'сейчас' : agoShort(an.lastSeen)}`,
+      name: '🖥️ На сервере',
+      value: 'Игрока не видели на этом сервере (или это не тиммейт — позицию видны только для команды).',
       inline: false,
     });
   }

@@ -161,6 +161,16 @@ class DiscordBot extends EventEmitter {
         )
         .toJSON(),
       new SlashCommandBuilder()
+        .setName('track')
+        .setDescription('Отслеживание игрока: где сейчас, маршрут, последняя смерть, статистика')
+        .addStringOption((o) =>
+          o
+            .setName('player')
+            .setDescription('Ник, Steam ID или ссылка на профиль')
+            .setRequired(true)
+        )
+        .toJSON(),
+      new SlashCommandBuilder()
         .setName('players')
         .setDescription('Кого бот видел: кто онлайн и когда заходил')
         .toJSON(),

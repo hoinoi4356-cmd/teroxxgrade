@@ -16,6 +16,11 @@ const statsEl = document.getElementById('stats');
 const peopleEl = document.getElementById('people');
 const peopleCountEl = document.getElementById('peopleCount');
 const popChartEl = document.getElementById('popchart');
+const pcardEl = document.getElementById('pcard');
+
+// Последнее состояние с сервера — нужно для карточки игрока по клику.
+let lastState = null;
+let activeSteamId = null;
 
 // Геометрія карти з сервера (розмір зображення, відступ океану, розмір світу).
 // Rust+ віддає зображення, де ігрова зона вписана з відступом oceanMargin,
@@ -39,17 +44,46 @@ function worldToPct(wx, wy) {
   return { left: clampPct((px / g.W) * 100), top: clampPct((py / g.H) * 100) };
 }
 
+const GRID_DIAMETER = 146.28571428571428;
+const GRID_LETTERS = (() => {
+  const single = [];
+  for (let c = 0; c < 26; c++) single.push(String.fromCharCode(65 + c));
+  const double = [];
+  for (const a of single) for (const b of single) double.push(a + b);
+  return single.concat(double);
+})();
+
+function gridLabel(x, y, mapSize) {
+  const size = Number(mapSize) || 0;
+  const col = Math.max(0, Math.floor((Number(x) || 0) / GRID_DIAMETER));
+  const row = Math.max(0, Math.floor((size - (Number(y) || 0)) / GRID_DIAMETER));
+  return `${GRID_LETTERS[col] || col}${row}`;
+}
+
+function agoText(ts) {
+  if (!ts) return '—';
+  const d = Math.round((Date.now() - ts) / 1000);
+  if (d < 60) return 'только что';
+  if (d < 3600) return `${Math.floor(d / 60)} мин назад`;
+  if (d < 86400) return `${Math.floor(d / 3600)} ч назад`;
+  return `${Math.floor(d / 86400)} д назад`;
+}
+
 function wipeText(ts) {
   if (!ts) return 'вайп —';
   const days = Math.floor((Date.now() / 1000 - ts) / 86400);
   return `вайп ${days}д`;
 }
 
-function dot(cls, leftPct, topPct, label) {
+function dot(cls, leftPct, topPct, label, onClick) {
   const d = document.createElement('div');
   d.className = 'dot ' + cls;
   d.style.left = leftPct + '%';
   d.style.top = topPct + '%';
+  if (onClick) {
+    d.style.cursor = 'pointer';
+    d.addEventListener('click', onClick);
+  }
   if (label) {
     d.title = label;
     const l = document.createElement('span');
@@ -62,6 +96,80 @@ function dot(cls, leftPct, topPct, label) {
   overlayEl.appendChild(d);
 }
 
+// Следы перемещения тиммейтов (polyline в SVG поверх карты).
+function drawTrails(team) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'trails');
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  let any = false;
+  (team || []).forEach((m) => {
+    const path = m.path || [];
+    if (path.length < 2) return;
+    const pts = path
+      .map((pt) => {
+        const p = worldToPct(Number(pt.x), Number(pt.y));
+        return `${p.left},${p.top}`;
+      })
+      .join(' ');
+    const poly = document.createElementNS(ns, 'polyline');
+    poly.setAttribute('points', pts);
+    poly.setAttribute('class', 'trail' + (m.isOnline ? '' : ' off') + (String(m.steamId) === String(activeSteamId) ? ' active' : ''));
+    poly.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.appendChild(poly);
+    any = true;
+  });
+  if (any) overlayEl.appendChild(svg);
+}
+
+function showCard(steamId) {
+  if (!pcardEl) return;
+  if (String(activeSteamId) === String(steamId)) {
+    activeSteamId = null;
+    pcardEl.hidden = true;
+    return;
+  }
+  activeSteamId = steamId;
+  const s = lastState || {};
+  const mapSize = s.mapSize || 0;
+  const team = (s.team || []).find((m) => String(m.steamId) === String(steamId));
+  const an = (s.analytics && s.analytics.members || []).find((m) => String(m.steamId) === String(steamId));
+  const name = (team && team.name) || (an && an.name) || steamId;
+  const avatar = (team && team.avatar) || (an && an.avatar) || '';
+  const hours = team && team.rustHours != null ? team.rustHours : (an && an.steamHours != null ? an.steamHours : null);
+
+  const rows = [];
+  const online = (team && team.isOnline) || (an && an.online);
+  rows.push(`${online ? '🟢 в игре' : '⚫ офлайн'}${team && !team.isAlive ? ' ☠ мёртв' : ''}${team && team.isLeader ? ' ★ лидер' : ''}`);
+  if (hours != null) rows.push(`🎮 Rust в Steam: <b>${Math.round(hours).toLocaleString('ru-RU')} ч</b>`);
+  if (an) {
+    rows.push(`⏱️ Наиграно за вайп: <b>${fmtDur(an.onlineSeconds)}</b>`);
+    rows.push(`🔁 Сессий: <b>${an.sessions}</b> • ☠️ Смертей: <b>${an.deaths}</b>`);
+    rows.push(`👀 Последний раз: ${an.online ? 'сейчас' : agoText(an.lastSeen)}`);
+    const lastPos = an.lastPos;
+    if (lastPos && mapSize) {
+      rows.push(`📍 ${an.online ? 'Сейчас' : 'Был'}: квадрат <b>${gridLabel(lastPos.x, lastPos.y, mapSize)}</b> (${Math.round(lastPos.x)}, ${Math.round(lastPos.y)})`);
+    }
+    if (an.lastDeath && mapSize) {
+      rows.push(`💀 Последняя смерть: <b>${gridLabel(an.lastDeath.x, an.lastDeath.y, mapSize)}</b> — ${agoText(an.lastDeath.t)}`);
+    }
+    if (an.path && an.path.length > 2) {
+      rows.push(`🧭 Точек маршрута: <b>${an.path.length}</b>`);
+    }
+  }
+  pcardEl.innerHTML =
+    `<div class="pcard-h"><img src="${escapeHtml(avatar)}" alt="" onerror="this.style.display='none'"/><b>${escapeHtml(name)}</b><span class="x">✕</span></div>` +
+    `<div class="pcard-b">${rows.join('<br>')}</div>` +
+    `<div class="pcard-f"><a href="https://steamcommunity.com/profiles/${encodeURIComponent(steamId)}" target="_blank" rel="noopener">Открыть Steam</a>${an && an.path && an.path.length > 1 ? ' • маршрут подсвечен' : ''}</div>`;
+  pcardEl.hidden = false;
+  pcardEl.querySelector('.x').addEventListener('click', () => {
+    activeSteamId = null;
+    pcardEl.hidden = true;
+    tick();
+  });
+}
+
 function renderTeam(team, size) {
   teamEl.innerHTML = '';
   if (!team.length) {
@@ -71,9 +179,11 @@ function renderTeam(team, size) {
   team.forEach((m) => {
     const p = worldToPct(Number(m.x), Number(m.y));
     const cls = !m.isOnline ? 'team-offline' : (m.isAlive ? 'team-online' : 'team-dead');
-    dot(cls, p.left, p.top, m.name);
+    dot(cls, p.left, p.top, m.name, () => showCard(m.steamId));
     const li = document.createElement('li');
-    li.className = m.isOnline ? '' : 'off';
+    li.className = (m.isOnline ? '' : 'off') + (String(m.steamId) === String(activeSteamId) ? ' active' : '');
+    li.style.cursor = 'pointer';
+    li.addEventListener('click', () => showCard(m.steamId));
     const av = m.avatar
       ? `<img class="av" src="${escapeHtml(m.avatar)}" alt="" onerror="this.style.display='none'" />`
       : '';
@@ -245,11 +355,18 @@ async function tick() {
     }
 
     overlayEl.innerHTML = '';
+    lastState = s;
     renderTeam(s.team || [], s.mapSize);
+    drawTrails(s.team || []);
     renderEvents(s.markers || [], s.mapSize);
     renderDeaths(s.deaths || []);
     renderNotes(s.notes || []);
     renderPeople(s.players || []);
+    if (activeSteamId !== null && pcardEl && !pcardEl.hidden) {
+      const keep = activeSteamId;
+      activeSteamId = null; // чтобы showCard не свернул карточку
+      showCard(keep);
+    }
     const an = s.analytics || null;
     if (an) {
       renderStats(an.members || []);

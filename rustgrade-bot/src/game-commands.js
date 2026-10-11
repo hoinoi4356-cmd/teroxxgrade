@@ -30,7 +30,7 @@ class GameCommands {
 
     switch (cmd) {
       case 'help':
-        return this._reply('Команды: !pop !time !online !events !map !wipe !devices !switch !stats !player !players');
+        return this._reply('Команды: !pop !time !online !events !map !wipe !devices !switch !stats !player !track !players');
       case 'pop':
         return this._cmdPop();
       case 'time':
@@ -53,6 +53,8 @@ class GameCommands {
       case 'player':
       case 'steam':
         return this._cmdPlayer(args);
+      case 'track':
+        return this._cmdTrack(args);
       case 'players':
         return this._cmdPlayers();
       default:
@@ -154,6 +156,25 @@ class GameCommands {
     this._reply(`В сети: ${online.length ? online.join(', ') : 'никого'} | в базе: ${all.length}`);
   }
 
+  _cmdTrack(args) {
+    const query = (args[0] || '').trim();
+    if (!query) return this._reply('Формат: !track <ник>');
+    if (!this.analytics) return this._reply('Нет данных для отслеживания.');
+    const members = this.analytics.leaderboard();
+    const q = query.toLowerCase();
+    const m =
+      members.find((x) => x.steamId === query) ||
+      members.find((x) => (x.name || '').toLowerCase() === q) ||
+      members.find((x) => (x.name || '').toLowerCase().includes(q));
+    if (!m) return this._reply(`"${query}" не в команде — позицию видно только у тиммейтов.`);
+    const mapSize = this.manager.mapSize || 0;
+    const g = (p) => (p && mapSize ? gridLabel(p.x, p.y, mapSize) : '?');
+    let s = `${m.name}: ${m.online ? 'в игре' : 'офлайн'} | ${this._fmtDur(m.onlineSeconds)} | ☠${m.deaths}`;
+    if (m.lastPos) s += ` | ${m.online ? 'квадрат' : 'был в'} ${g(m.lastPos)}`;
+    if (m.lastDeath) s += ` | умер: ${g(m.lastDeath)}`;
+    this._reply(s);
+  }
+
   async _cmdPlayer(args) {
     const query = (args[0] || '').trim();
     if (!query) return this._reply('Формат: !player <ник>');
@@ -177,8 +198,17 @@ class GameCommands {
     const p = await this.steam.get(steamId);
     if (!p) return this._reply('Профиль Steam недоступен.');
     const hours = p.rustHours != null ? `${p.rustHours}ч Rust` : 'часы Rust скрыты';
-    const vac = p.vacBanned ? ' | ⚠ VAC-бан' : '';
-    this._reply(`${p.name || query}: ${hours}${vac}`);
+    const vac = p.vacBanned ? ' | VAC-бан' : '';
+    let srv = '';
+    if (this.analytics) {
+      const an = this.analytics.leaderboard().find((x) => x.steamId === steamId);
+      if (an) {
+        srv = ` | ${an.online ? 'в игре' : 'офлайн'} ${this._fmtDur(an.onlineSeconds)} ☠${an.deaths}`;
+        const mapSize = this.manager.mapSize || 0;
+        if (an.lastPos && mapSize) srv += ` ${gridLabel(an.lastPos.x, an.lastPos.y, mapSize)}`;
+      }
+    }
+    this._reply(`${p.name || query}: ${hours}${vac}${srv}`);
   }
 
   async _cmdDevices() {

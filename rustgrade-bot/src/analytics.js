@@ -17,7 +17,7 @@ const MAX_SAMPLES = 2000; // ~33 ч при семпле раз в минуту
  */
 class Analytics {
   constructor() {
-    this.data = { wipeStart: 0, start: Date.now(), pop: [], members: {} };
+    this.data = { wipeStart: 0, start: Date.now(), pop: [], members: {}, paths: {} };
     this.onlineSince = new Map(); // steamId -> ts (текущая сессия)
     this._loaded = false;
     this._dirty = false;
@@ -32,6 +32,7 @@ class Analytics {
         this.data = Object.assign(this.data, raw);
         if (!Array.isArray(this.data.pop)) this.data.pop = [];
         if (!this.data.members) this.data.members = {};
+        if (!this.data.paths) this.data.paths = {};
       }
     } catch (_) {
       /* первый запуск — данных ещё нет */
@@ -93,13 +94,49 @@ class Analytics {
     this._dirty = true;
   }
 
-  death(steamId, name) {
+  death(steamId, name, x, y) {
     const id = String(steamId);
     if (!id || id === 'undefined') return;
     const m = this._member(id, name);
     m.deaths = (m.deaths || 0) + 1;
     m.lastSeen = Date.now();
+    if (Number.isFinite(Number(x)) && Number.isFinite(Number(y))) {
+      m.lastDeath = { x: Number(x), y: Number(y), t: Date.now() };
+    }
     this._dirty = true;
+  }
+
+  // Запись позиции тиммейта (для следа/отслеживания). Пишем, если сместился
+  // больше MIN_DIST или прошло больше MIN_MS с прошлой точки.
+  position(steamId, name, x, y) {
+    const id = String(steamId);
+    if (!id || id === 'undefined') return;
+    const nx = Number(x);
+    const ny = Number(y);
+    if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
+    const m = this._member(id, name);
+    const now = Date.now();
+    m.lastPos = { x: nx, y: ny, t: now };
+    let p = this.data.paths[id];
+    if (!p) {
+      p = [];
+      this.data.paths[id] = p;
+    }
+    const last = p[p.length - 1];
+    const MIN_DIST = 25; // ~ метров мира
+    const MIN_MS = 20000;
+    if (last) {
+      const d = Math.hypot(nx - last.x, ny - last.y);
+      if (d < MIN_DIST && now - last.t < MIN_MS) return;
+    }
+    p.push({ x: nx, y: ny, t: now });
+    if (p.length > 200) p.splice(0, p.length - 200);
+    this._dirty = true;
+  }
+
+  pathOf(steamId, n = 80) {
+    const p = this.data.paths[String(steamId)] || [];
+    return p.slice(Math.max(0, p.length - n));
   }
 
   sample(players, wipeTime) {
@@ -110,6 +147,7 @@ class Analytics {
         // новый вайп — обнуляем статистику
         log.info('Analytics: обнаружен новый вайп — сбрасываю статистику');
         this.data.members = {};
+        this.data.paths = {};
         this.data.pop = [];
         this.onlineSince.clear();
       }
@@ -153,6 +191,9 @@ class Analytics {
         deaths: m.deaths || 0,
         online: this.onlineSince.has(id),
         lastSeen: m.lastSeen || 0,
+        lastPos: m.lastPos || null,
+        lastDeath: m.lastDeath || null,
+        path: this.pathOf(id, 60),
       });
     }
     out.sort((a, b) => b.onlineSeconds - a.onlineSeconds);
