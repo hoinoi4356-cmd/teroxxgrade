@@ -14,7 +14,7 @@ const CONFIG_PATH = path.join(ROOT, 'config.json');
 async function main() {
   const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
   const token = config.discord && config.discord.token;
-  const guildId = config.discord && config.discord.guildId;
+  const guildId = process.argv[2] || (config.discord && config.discord.guildId);
   if (!token || !guildId) {
     console.error('Нет discord.token или discord.guildId в config.json');
     process.exit(1);
