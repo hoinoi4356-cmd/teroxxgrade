@@ -20,10 +20,17 @@
   <main class="wrap">
     <div class="mapframe">
       <div id="map" class="map">
-        <img id="mapimg" alt="map" />
-        <div id="overlay" class="overlay"></div>
+        <div id="mapinner" class="mapinner">
+          <img id="mapimg" alt="map" />
+          <div id="overlay" class="overlay"></div>
+        </div>
         <div id="empty" class="empty">Карта недоступна (сервер ещё не отдал изображение)</div>
         <div id="pcard" class="pcard" hidden></div>
+        <div class="mapctl">
+          <button id="zin" type="button" title="Приблизить">+</button>
+          <button id="zout" type="button" title="Отдалить">−</button>
+          <button id="zreset" type="button" title="Сбросить масштаб">⤢</button>
+        </div>
       </div>
     </div>
 

@@ -8,7 +8,7 @@ const GameCommands = require('./game-commands');
 const WebMap = require('./web-map');
 const { EmbedBuilder } = require('discord.js');
 const { markerEmoji, markerLabelRu, gridLabel } = require('./markers');
-const { describeTime } = require('./time-utils');
+const { describeTime, mskTime } = require('./time-utils');
 const Analytics = require('./analytics');
 const Steam = require('./steam');
 const PlayerRegistry = require('./players');
@@ -302,13 +302,17 @@ async function handleSlash(interaction, { managers, primary, webMap, analytics, 
       }
       case 'time': {
         if (!manager) return interaction.reply({ content: 'Нет подключённых аккаунтов.', ephemeral: true });
+        const msk = mskTime();
         const t = await manager.getTimeAsync();
-        if (!t) return interaction.reply({ content: 'Время недоступно.', ephemeral: true });
+        if (!t) {
+          return interaction.reply({ content: `🕐 МСК ${msk.clockSec} — ${msk.date} (${msk.weekday})`, ephemeral: true });
+        }
         const d = describeTime(t);
         const embed = new EmbedBuilder()
-          .setTitle(`🕐 ${d.clock} — ${d.phase}`)
-          .setDescription(`${d.untilLabel[0].toUpperCase()}${d.untilLabel.slice(1)}: **${d.untilText}**`)
+          .setTitle(`🕐 МСК ${msk.clockSec}`)
+          .setDescription(`${msk.date}, ${msk.weekday}\n**${d.untilLabel[0].toUpperCase()}${d.untilLabel.slice(1)}: ${d.untilText}**`)
           .addFields(
+            { name: 'Игровое время', value: `${d.clock} (${d.phase})`, inline: true },
             { name: 'Рассвет', value: d.sunrise, inline: true },
             { name: 'Закат', value: d.sunset, inline: true }
           )
@@ -519,7 +523,11 @@ async function handleSlash(interaction, { managers, primary, webMap, analytics, 
           `Наиграно за вайп: **${fmtDurLong(entry.onlineSeconds)}** • сессий: **${entry.sessions}**`,
           `Смертей: **${entry.deaths}** • последний раз: ${entry.online ? 'сейчас' : agoShort(entry.lastSeen)}`,
         ];
+        if (entry.avgSession) lines.push(`Средняя сессия: ${fmtDurLong(entry.avgSession)}`);
+        if (entry.lastConnected) lines.push(`Зашёл: ${entry.online ? `сейчас (${shortDT(entry.lastConnected)})` : agoShort(entry.lastConnected)} (${shortDT(entry.lastConnected)})`);
+        if (entry.lastDisconnected) lines.push(`Вышел: ${agoShort(entry.lastDisconnected)} (${shortDT(entry.lastDisconnected)})`);
         embed.addFields({ name: 'Статус', value: lines.join('\n'), inline: false });
+        embed.addFields({ name: '🕒 Вход → выход', value: sessionLines(entry, 8), inline: false });
 
         if (entry.online && entry.lastPos) {
           embed.addFields({
@@ -570,9 +578,11 @@ async function handleSlash(interaction, { managers, primary, webMap, analytics, 
         const onlineLine = online.length ? online.map((e) => e.name).join(', ') : 'никого';
         const lines = all.slice(0, 15).map((e) => {
           const status = e.online ? '🟢' : '⚫';
-          const last = e.online ? 'сейчас' : agoShort(e.lastSeen);
+          let when = e.online ? 'сейчас' : agoShort(e.lastSeen);
+          if (e.online && e.lastIn) when = `в игре с ${shortDT(e.lastIn)}`;
+          else if (!e.online && e.lastOut) when = `вышел ${agoShort(e.lastOut)}`;
           const extra = `${e.chats ? ` • 💬${e.chats}` : ''}${e.deaths ? ` • ☠${e.deaths}` : ''}`;
-          return `${status} **${e.name}** — ${last}${extra}`;
+          return `${status} **${e.name}** — ${when}${extra}`;
         });
         const embed = new EmbedBuilder()
           .setTitle(`👥 Игроки в базе: ${all.length}`)
@@ -616,6 +626,34 @@ function agoShort(ts) {
   return `${Math.floor(d / 86400)} д назад`;
 }
 
+// «10.10 21:03»
+function shortDT(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// Одна сессия: «10.10 21:03 → 23:40 (2 ч 37 мин)» или «… → сейчас».
+function sessionLine(s) {
+  if (!s || !s.start) return '';
+  const open = !s.end;
+  const dur = fmtDurLong(Math.round(((s.end || Date.now()) - s.start) / 1000));
+  return `${shortDT(s.start)} → ${open ? 'сейчас' : shortDT(s.end)} (${dur})`;
+}
+
+// Последние сессии (вход/выход), новые сверху.
+function sessionLines(an, limit = 6) {
+  const hist = (an && an.history) || [];
+  if (!hist.length) return 'Сессий пока нет.';
+  return hist
+    .slice(-limit)
+    .reverse()
+    .map((s) => sessionLine(s))
+    .filter(Boolean)
+    .join('\n');
+}
+
 // Полная карточка игрока: Steam (даже если профиль закрыт — имя и аватар видны) + статистика на сервере.
 async function buildPlayerCard(steamId, { analytics, steam, manager }) {
   const profile = steam ? await steam.get(steamId) : null;
@@ -657,9 +695,14 @@ async function buildPlayerCard(steamId, { analytics, steam, manager }) {
       `${an.online ? '🟢 в игре' : '⚫ офлайн'}`,
       `Наиграно (вайп): **${fmtDurLong(an.onlineSeconds)}**`,
       `Сессий: **${an.sessions}** • Смертей: **${an.deaths}**`,
-      `Последний раз: ${an.online ? 'сейчас' : agoShort(an.lastSeen)}`,
     ];
+    if (an.avgSession) statsLines.push(`Средняя сессия: ${fmtDurLong(an.avgSession)}`);
+    if (an.lastConnected) statsLines.push(`Последний вход: ${an.online ? 'сейчас' : agoShort(an.lastConnected)}`);
+    if (an.lastDisconnected) statsLines.push(`Последний выход: ${agoShort(an.lastDisconnected)}`);
     embed.addFields({ name: '🖥️ На сервере (текущий вайп)', value: statsLines.join('\n'), inline: false });
+
+    // История входов/выходов
+    embed.addFields({ name: '🕒 Вход → выход (последние сессии)', value: sessionLines(an, 8), inline: false });
 
     // Локация: текущая (если в сети) или последняя известная
     const locLines = [];

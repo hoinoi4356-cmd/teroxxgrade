@@ -117,7 +117,7 @@ class DiscordBot extends EventEmitter {
     return [
       new SlashCommandBuilder().setName('status').setDescription('Статус бота и подключения к Rust').toJSON(),
       new SlashCommandBuilder().setName('pop').setDescription('Онлайн сервера Rust').toJSON(),
-      new SlashCommandBuilder().setName('time').setDescription('Игровое время: сколько до рассвета/заката').toJSON(),
+      new SlashCommandBuilder().setName('time').setDescription('Время по МСК (Москва) + сколько до рассвета/заката').toJSON(),
       new SlashCommandBuilder().setName('team').setDescription('Состав команды и статус игроков').toJSON(),
       new SlashCommandBuilder().setName('events').setDescription('Текущие события на карте').toJSON(),
       new SlashCommandBuilder()

@@ -58,4 +58,51 @@ function describeTime(t) {
   };
 }
 
-module.exports = { describeTime, fmtClock, fmtDuration };
+/**
+ * Реальное время по Москве (МСК, UTC+3 круглый год).
+ * Возвращает { clock, clockSec, date, weekday }.
+ */
+function mskTime(date = new Date()) {
+  const tz = 'Europe/Moscow';
+  let parts;
+  try {
+    parts = new Intl.DateTimeFormat('ru-RU', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      weekday: 'short',
+    }).formatToParts(date);
+  } catch (_) {
+    // fallback: UTC+3 без учета летнего времени (в РФ его нет)
+    const d = new Date(date.getTime() + 3 * 3600 * 1000);
+    const p = (n) => String(n).padStart(2, '0');
+    return {
+      clock: `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`,
+      clockSec: `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`,
+      date: `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`,
+      weekday: '',
+    };
+  }
+  const get = (type) => {
+    const part = parts.find((p) => p.type === type);
+    return part ? part.value : '';
+  };
+  const hh = get('hour');
+  const mm = get('minute');
+  const ss = get('second');
+  const dd = get('day');
+  const mo = get('month');
+  const yy = get('year');
+  return {
+    clock: `${hh}:${mm}`,
+    clockSec: `${hh}:${mm}:${ss}`,
+    date: `${dd}.${mo}.${yy}`,
+    weekday: get('weekday'),
+  };
+}
+
+module.exports = { describeTime, fmtClock, fmtDuration, mskTime };

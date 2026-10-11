@@ -33,6 +33,9 @@ class Analytics {
         if (!Array.isArray(this.data.pop)) this.data.pop = [];
         if (!this.data.members) this.data.members = {};
         if (!this.data.paths) this.data.paths = {};
+        for (const m of Object.values(this.data.members)) {
+          if (!Array.isArray(m.history)) m.history = [];
+        }
       }
     } catch (_) {
       /* первый запуск — данных ещё нет */
@@ -68,9 +71,10 @@ class Analytics {
     const id = String(steamId);
     let m = this.data.members[id];
     if (!m) {
-      m = { name: name || '?', onlineSeconds: 0, sessions: 0, deaths: 0, lastSeen: 0 };
+      m = { name: name || '?', onlineSeconds: 0, sessions: 0, deaths: 0, lastSeen: 0, history: [] };
       this.data.members[id] = m;
     }
+    if (!Array.isArray(m.history)) m.history = [];
     if (name) m.name = name;
     return m;
   }
@@ -84,12 +88,19 @@ class Analytics {
       if (!this.onlineSince.has(id)) {
         this.onlineSince.set(id, now);
         m.sessions = (m.sessions || 0) + 1;
+        m.lastConnected = now;
+        // нова сесія: фіксуємо час входу (end=0 — ще в грі)
+        m.history.push({ start: now, end: 0 });
+        if (m.history.length > 30) m.history.splice(0, m.history.length - 30);
       }
       m.lastSeen = now;
     } else if (this.onlineSince.has(id)) {
       m.onlineSeconds = (m.onlineSeconds || 0) + Math.round((now - this.onlineSince.get(id)) / 1000);
       this.onlineSince.delete(id);
       m.lastSeen = now;
+      m.lastDisconnected = now;
+      const last = m.history[m.history.length - 1];
+      if (last && !last.end) last.end = now;
     }
     this._dirty = true;
   }
@@ -182,17 +193,32 @@ class Analytics {
 
   leaderboard() {
     const out = [];
+    const now = Date.now();
     for (const [id, m] of Object.entries(this.data.members)) {
+      const hist = Array.isArray(m.history) ? m.history : [];
+      // длительность последней сессии
+      let lastSession = 0;
+      if (hist.length) {
+        const s = hist[hist.length - 1];
+        lastSession = Math.round(((s.end || now) - s.start) / 1000);
+      }
+      const live = this._liveSeconds(m, id);
+      const avgSession = m.sessions ? Math.round(live / m.sessions) : 0;
       out.push({
         steamId: id,
         name: m.name || '?',
-        onlineSeconds: this._liveSeconds(m, id),
+        onlineSeconds: live,
         sessions: m.sessions || 0,
         deaths: m.deaths || 0,
         online: this.onlineSince.has(id),
         lastSeen: m.lastSeen || 0,
+        lastConnected: m.lastConnected || 0,
+        lastDisconnected: m.lastDisconnected || 0,
+        lastSession,
+        avgSession,
         lastPos: m.lastPos || null,
         lastDeath: m.lastDeath || null,
+        history: hist.slice(-12),
         path: this.pathOf(id, 60),
       });
     }

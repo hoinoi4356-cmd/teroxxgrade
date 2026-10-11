@@ -48,9 +48,41 @@ body {
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
+  touch-action: none;
 }
+.mapinner { position: absolute; inset: 0; transform-origin: 0 0; will-change: transform; }
+.mapinner.dragging { cursor: grabbing; }
 .map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .overlay { position: absolute; inset: 0; }
+
+/* Сітка як на справжній карті Rust */
+.grid { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.gridline { stroke: rgba(255, 255, 255, 0.22); stroke-width: 1; }
+.gridline.major { stroke: rgba(255, 255, 255, 0.4); }
+.gridcell-x, .gridcell-y {
+  position: absolute;
+  font: 600 10px/1 "Segoe UI", Arial, sans-serif;
+  color: #fff;
+  text-shadow: 0 0 3px #000, 0 0 2px #000;
+  pointer-events: none;
+  opacity: .85;
+}
+.gridcell-x { transform: translateX(-50%); }
+.gridcell-y { transform: translateY(-50%); }
+
+.mapctl { position: absolute; left: 10px; top: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 7; }
+.mapctl button {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #0b0f14cc;
+  color: var(--txt);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(3px);
+}
+.mapctl button:hover { border-color: var(--accent); color: var(--accent); }
 
 .empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--muted); text-align: center; padding: 20px; }
 

@@ -59,7 +59,7 @@ class PlayerRegistry {
     let e = this.data[id];
     const now = Date.now();
     if (!e) {
-      e = { steamId: id, name: name || '?', firstSeen: now, lastSeen: now, lastOnline: 0, online: false, deaths: 0, chats: 0, team: false };
+      e = { steamId: id, name: name || '?', firstSeen: now, lastSeen: now, lastOnline: 0, lastIn: 0, lastOut: 0, online: false, deaths: 0, chats: 0, team: false };
       this.data[id] = e;
     }
     if (name) e.name = name;
@@ -80,10 +80,13 @@ class PlayerRegistry {
     const e = this._entry(steamId, name);
     if (!e) return;
     e.team = true;
+    const now = Date.now();
     if (online) {
+      if (!e.online) e.lastIn = now; // только при входе (переход офлайн->онлайн)
       e.online = true;
-      e.lastOnline = Date.now();
+      e.lastOnline = now;
     } else {
+      if (e.online) e.lastOut = now; // только при выходе
       e.online = false;
     }
   }

@@ -1,7 +1,7 @@
 'use strict';
 
 const { markerLabel, gridLabel } = require('./markers');
-const { describeTime } = require('./time-utils');
+const { describeTime, mskTime } = require('./time-utils');
 
 /**
  * In-game team chat commands. A player types "!pop" etc. and the bot answers
@@ -74,6 +74,21 @@ class GameCommands {
     return `${h.toString().padStart(2, '0')}:${m}`;
   }
 
+  _hm(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+  }
+
+  _ago(ts) {
+    if (!ts) return '';
+    const d = Math.round((Date.now() - ts) / 1000);
+    if (d < 60) return 'только что';
+    if (d < 3600) return `${Math.floor(d / 60)}м назад`;
+    if (d < 86400) return `${Math.floor(d / 3600)}ч назад`;
+    return `${Math.floor(d / 86400)}д назад`;
+  }
+
   async _cmdPop() {
     const info = await this.manager.getInfoAsync();
     if (!info) return this._reply('Онлайн недоступен, попробуй позже.');
@@ -82,10 +97,11 @@ class GameCommands {
   }
 
   async _cmdTime() {
+    const msk = mskTime();
     const t = await this.manager.getTimeAsync();
-    if (!t) return this._reply('Время недоступно.');
+    if (!t) return this._reply(`МСК ${msk.clockSec} (${msk.date})`);
     const d = describeTime(t);
-    this._reply(`Сейчас ${d.clock} (${d.phase}). Осталось ${d.untilLabel}: ${d.untilText}`);
+    this._reply(`МСК ${msk.clockSec} (${msk.date}) | до ${d.untilLabel.replace('до ', '')}: ${d.untilText}`);
   }
 
   async _cmdOnline() {
@@ -140,9 +156,10 @@ class GameCommands {
         members.find((x) => x.steamId === query) ||
         members.find((x) => (x.name || '').toLowerCase().includes(query));
       if (!m) return this._reply(`Игрок "${args[0]}" не найден.`);
-      return this._reply(
-        `${m.name}${m.online ? ' (в игре)' : ''}: наиграно ${this._fmtDur(m.onlineSeconds)}, сессий ${m.sessions}, смертей ${m.deaths}`
-      );
+      let s = `${m.name}${m.online ? ' (в игре)' : ''}: наиграно ${this._fmtDur(m.onlineSeconds)}, сессий ${m.sessions}, смертей ${m.deaths}`;
+      if (m.online && m.lastConnected) s += `, зашёл ${this._hm(m.lastConnected)}`;
+      else if (!m.online && m.lastDisconnected) s += `, вышел ${this._ago(m.lastDisconnected)}`;
+      return this._reply(s);
     }
     const top = members.slice(0, 3).map((m) => `${m.name} ${this._fmtDur(m.onlineSeconds)}`).join(', ');
     this._reply(`Топ по онлайну: ${top}`);
@@ -170,6 +187,8 @@ class GameCommands {
     const mapSize = this.manager.mapSize || 0;
     const g = (p) => (p && mapSize ? gridLabel(p.x, p.y, mapSize) : '?');
     let s = `${m.name}: ${m.online ? 'в игре' : 'офлайн'} | ${this._fmtDur(m.onlineSeconds)} | ☠${m.deaths}`;
+    if (m.online && m.lastConnected) s += ` | зашёл ${this._hm(m.lastConnected)}`;
+    else if (!m.online && m.lastDisconnected) s += ` | вышел ${this._ago(m.lastDisconnected)}`;
     if (m.lastPos) s += ` | ${m.online ? 'квадрат' : 'был в'} ${g(m.lastPos)}`;
     if (m.lastDeath) s += ` | умер: ${g(m.lastDeath)}`;
     this._reply(s);

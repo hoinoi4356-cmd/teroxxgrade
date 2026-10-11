@@ -1,6 +1,7 @@
 'use strict';
 
 const mapEl = document.getElementById('map');
+const innerEl = document.getElementById('mapinner');
 const imgEl = document.getElementById('mapimg');
 const overlayEl = document.getElementById('overlay');
 const emptyEl = document.getElementById('empty');
@@ -67,6 +68,168 @@ function agoText(ts) {
   if (d < 3600) return `${Math.floor(d / 60)} мин назад`;
   if (d < 86400) return `${Math.floor(d / 3600)} ч назад`;
   return `${Math.floor(d / 86400)} д назад`;
+}
+
+function shortDT(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// Сітка координат як на справжній карті Rust: лінії по кожній клітинці
+// (GRID_DIAMETER) з підписами стовпців (A, B, ...) і рядків (0, 1, ...).
+function drawGrid(mapSize) {
+  const g = geom;
+  if (!g || !g.size || !g.W || !g.H) return;
+  const size = Number(mapSize) || g.size;
+  const cell = GRID_DIAMETER;
+  const cols = Math.max(1, Math.round(size / cell));
+  const rows = cols;
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'grid');
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('preserveAspectRatio', 'none');
+
+  for (let i = 0; i <= cols; i++) {
+    const p = worldToPct(i * cell, size / 2);
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', p.left);
+    line.setAttribute('x2', p.left);
+    line.setAttribute('y1', 0);
+    line.setAttribute('y2', 100);
+    line.setAttribute('class', 'gridline' + (i % 5 === 0 ? ' major' : ''));
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.appendChild(line);
+  }
+  for (let r = 0; r <= rows; r++) {
+    const p = worldToPct(size / 2, size - r * cell);
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('y1', p.top);
+    line.setAttribute('y2', p.top);
+    line.setAttribute('x1', 0);
+    line.setAttribute('x2', 100);
+    line.setAttribute('class', 'gridline' + (r % 5 === 0 ? ' major' : ''));
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.appendChild(line);
+  }
+  overlayEl.appendChild(svg);
+
+  // Підписи стовпців зверху і рядків зліва (у межах ігрової зони).
+  for (let i = 0; i < cols; i++) {
+    const cx = worldToPct(i * cell + cell / 2, size / 2);
+    const lx = document.createElement('div');
+    lx.className = 'gridcell-x';
+    lx.textContent = GRID_LETTERS[i] || String(i);
+    lx.style.left = cx.left + '%';
+    lx.style.top = '2px';
+    overlayEl.appendChild(lx);
+
+    const cy = worldToPct(size / 2, size - (i * cell + cell / 2));
+    const ly = document.createElement('div');
+    ly.className = 'gridcell-y';
+    ly.textContent = String(i);
+    ly.style.top = cy.top + '%';
+    ly.style.left = '2px';
+    overlayEl.appendChild(ly);
+  }
+}
+
+// --- Масштабування та переміщення карти ---
+let zoom = 1;
+let panX = 0;
+let panY = 0;
+const ZMIN = 1;
+const ZMAX = 12;
+
+function applyView() {
+  if (innerEl) innerEl.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  if (innerEl) innerEl.classList.toggle('zoomed', zoom > 1.001);
+}
+
+function zoomAt(cx, cy, factor) {
+  const nz = Math.max(ZMIN, Math.min(ZMAX, zoom * factor));
+  if (nz === zoom) return;
+  // тримаємо точку під курсором на місці
+  panX = cx - (cx - panX) * (nz / zoom);
+  panY = cy - (cy - panY) * (nz / zoom);
+  zoom = nz;
+  if (zoom === ZMIN) {
+    panX = 0;
+    panY = 0;
+  }
+  applyView();
+}
+
+function resetView() {
+  zoom = 1;
+  panX = 0;
+  panY = 0;
+  applyView();
+}
+
+function initMapControls() {
+  if (!mapEl) return;
+  const rectPoint = (e) => {
+    const r = mapEl.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  mapEl.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      const pt = rectPoint(e);
+      zoomAt(pt.x, pt.y, e.deltaY < 0 ? 1.18 : 1 / 1.18);
+    },
+    { passive: false }
+  );
+  let dragging = false;
+  let sx = 0;
+  let sy = 0;
+  let bx = 0;
+  let by = 0;
+  mapEl.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    if (zoom <= 1.001) return; // на 1:1 тягнути нічого
+    dragging = true;
+    sx = e.clientX;
+    sy = e.clientY;
+    bx = panX;
+    by = panY;
+    if (innerEl) innerEl.classList.add('dragging');
+    try {
+      mapEl.setPointerCapture(e.pointerId);
+    } catch (_) {
+      /* ignore */
+    }
+  });
+  mapEl.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    panX = bx + (e.clientX - sx);
+    panY = by + (e.clientY - sy);
+    applyView();
+  });
+  const end = () => {
+    dragging = false;
+    if (innerEl) innerEl.classList.remove('dragging');
+  };
+  mapEl.addEventListener('pointerup', end);
+  mapEl.addEventListener('pointercancel', end);
+  const zin = document.getElementById('zin');
+  const zout = document.getElementById('zout');
+  const zreset = document.getElementById('zreset');
+  if (zin)
+    zin.addEventListener('click', () => {
+      const r = mapEl.getBoundingClientRect();
+      zoomAt(r.width / 2, r.height / 2, 1.25);
+    });
+  if (zout)
+    zout.addEventListener('click', () => {
+      const r = mapEl.getBoundingClientRect();
+      zoomAt(r.width / 2, r.height / 2, 1 / 1.25);
+    });
+  if (zreset) zreset.addEventListener('click', resetView);
 }
 
 function wipeText(ts) {
@@ -146,7 +309,17 @@ function showCard(steamId) {
   if (an) {
     rows.push(`⏱️ Наиграно за вайп: <b>${fmtDur(an.onlineSeconds)}</b>`);
     rows.push(`🔁 Сессий: <b>${an.sessions}</b> • ☠️ Смертей: <b>${an.deaths}</b>`);
-    rows.push(`👀 Последний раз: ${an.online ? 'сейчас' : agoText(an.lastSeen)}`);
+    if (an.avgSession) rows.push(`📏 Средняя сессия: ${fmtDur(an.avgSession)}`);
+    if (an.lastConnected) rows.push(`➡️ Зашёл: <b>${an.online ? 'сейчас' : agoText(an.lastConnected)}</b> (${shortDT(an.lastConnected)})`);
+    if (an.lastDisconnected) rows.push(`⬅️ Вышел: <b>${agoText(an.lastDisconnected)}</b> (${shortDT(an.lastDisconnected)})`);
+    if (an.history && an.history.length) {
+      const h = an.history.slice(-4).reverse().map((sess) => {
+        const open = !sess.end;
+        const dur = fmtDur(Math.round(((sess.end || Date.now()) - sess.start) / 1000));
+        return `${shortDT(sess.start)} → ${open ? 'сейчас' : shortDT(sess.end)} (${dur})`;
+      }).join('<br>');
+      rows.push(`🕒 Вход/выход:<br>${h}`);
+    }
     const lastPos = an.lastPos;
     if (lastPos && mapSize) {
       rows.push(`📍 ${an.online ? 'Сейчас' : 'Был'}: квадрат <b>${gridLabel(lastPos.x, lastPos.y, mapSize)}</b> (${Math.round(lastPos.x)}, ${Math.round(lastPos.y)})`);
@@ -276,8 +449,13 @@ function renderPeople(people) {
   people.forEach((p) => {
     const li = document.createElement('li');
     li.className = p.online ? '' : 'off';
-    const mins = p.online ? 0 : Math.max(0, Math.round((Date.now() - p.lastSeen) / 60000));
-    const last = p.online ? 'сейчас' : (mins < 60 ? `${mins}м` : mins < 1440 ? `${Math.round(mins / 60)}ч` : `${Math.round(mins / 1440)}д`);
+    let last;
+    if (p.online && p.lastIn) last = `с ${shortDT(p.lastIn)}`;
+    else if (!p.online && p.lastOut) last = `вышел ${Math.max(0, Math.round((Date.now() - p.lastOut) / 60000))}м`;
+    else {
+      const mins = Math.max(0, Math.round((Date.now() - p.lastSeen) / 60000));
+      last = p.online ? 'сейчас' : (mins < 60 ? `${mins}м` : mins < 1440 ? `${Math.round(mins / 60)}ч` : `${Math.round(mins / 1440)}д`);
+    }
     const extra = `${p.chats ? ` 💬${p.chats}` : ''}${p.deaths ? ` ☠${p.deaths}` : ''}`;
     li.innerHTML = `<span>${p.online ? '🟢' : '⚫'} ${escapeHtml(p.name)}</span><span class="tag">${last}${extra}</span>`;
     peopleEl.appendChild(li);
@@ -356,6 +534,7 @@ async function tick() {
 
     overlayEl.innerHTML = '';
     lastState = s;
+    drawGrid(s.mapSize || geom.size);
     renderTeam(s.team || [], s.mapSize);
     drawTrails(s.team || []);
     renderEvents(s.markers || [], s.mapSize);
@@ -380,5 +559,6 @@ async function tick() {
   }
 }
 
+initMapControls();
 tick();
 setInterval(tick, 10000);
