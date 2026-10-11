@@ -276,6 +276,40 @@ class Analytics {
     return out;
   }
 
+  // Наиграно за последний период (мс) — по истории сессий (надёжно даже после
+  // рестартов: открытые сессии продолжаются, что бот не видел — не засчитывается).
+  leaderboardSince(sinceMs) {
+    const out = [];
+    const now = Date.now();
+    const since = Number(sinceMs) || 0;
+    for (const [id, m] of Object.entries(this.data.members)) {
+      const hist = Array.isArray(m.history) ? m.history : [];
+      let seconds = 0;
+      let sessionsIn = 0;
+      for (const s of hist) {
+        if (!s || !s.start) continue;
+        const start = Number(s.start);
+        const end = s.end ? Number(s.end) : now;
+        const a = Math.max(start, since);
+        const b = Math.min(end, now);
+        if (b > a) {
+          seconds += (b - a) / 1000;
+          if (start >= since) sessionsIn++;
+        }
+      }
+      out.push({
+        steamId: id,
+        name: m.name || '?',
+        onlineSeconds: Math.round(seconds),
+        sessions: sessionsIn,
+        online: this.onlineSince.has(id),
+        lastSeen: m.lastSeen || 0,
+      });
+    }
+    out.sort((a, b) => b.onlineSeconds - a.onlineSeconds);
+    return out;
+  }
+
   summary() {
     const pop = this.data.pop;
     let peak = 0;

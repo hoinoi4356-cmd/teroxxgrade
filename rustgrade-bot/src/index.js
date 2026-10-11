@@ -484,6 +484,38 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
         }
         return interaction.reply({ embeds: [embed], ephemeral: true });
       }
+      case 'top': {
+        if (!analytics) return interaction.reply({ content: 'Аналитика недоступна.', ephemeral: true });
+        const period = interaction.options.getString('period') || 'week';
+        const isWeek = period !== 'all';
+        const sinceMs = isWeek ? Date.now() - 7 * 86400000 : 0;
+        const rows = analytics.leaderboardSince(sinceMs).slice(0, 10);
+        if (!rows.length) {
+          return interaction.reply({ content: 'Статистики за этот период пока нет.', ephemeral: true });
+        }
+        const fmt = (s) => {
+          s = Math.max(0, Math.round(s));
+          const h = Math.floor(s / 3600);
+          const mn = Math.floor((s % 3600) / 60);
+          if (h) return `${h}ч ${mn}м`;
+          if (mn) return `${mn}м`;
+          return `${s}с`;
+        };
+        const nameCol = Math.max(6, ...rows.map((m) => (m.name || '').length)) + 2;
+        const table = rows
+          .map(
+            (m, i) =>
+              `${i + 1}. ${m.online ? '🟢' : '⚫'} ${(m.name || '?').padEnd(nameCol)}${fmt(m.onlineSeconds)}${m.sessions ? `  · ${m.sessions} сес.` : ''}`
+          )
+          .join('\n');
+        const embed = new EmbedBuilder()
+          .setTitle(isWeek ? '🏆 Топ недели (наиграно)' : '🏆 Топ за вайп (наиграно)')
+          .setDescription(`\`\`\`\n${table}\n\`\`\``)
+          .setFooter({ text: isWeek ? 'за последние 7 дней • топ 10' : 'за текущий вайп • топ 10' })
+          .setColor(0xf1c40f)
+          .setTimestamp();
+        return interaction.reply({ embeds: [embed] });
+      }
       case 'player': {
         const query = (interaction.options.getString('player') || '').trim();
         if (!query) {

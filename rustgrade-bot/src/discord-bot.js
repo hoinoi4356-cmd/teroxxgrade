@@ -171,6 +171,16 @@ class DiscordBot extends EventEmitter {
         )
         .toJSON(),
       new SlashCommandBuilder()
+        .setName('top')
+        .setDescription('Лидерка пачки: кто больше всех наиграл (таблица до 10)')
+        .addStringOption((o) =>
+          o
+            .setName('period')
+            .setDescription('Период')
+            .addChoices({ name: 'неделя', value: 'week' }, { name: 'весь вайп', value: 'all' })
+        )
+        .toJSON(),
+      new SlashCommandBuilder()
         .setName('players')
         .setDescription('Кого бот видел: кто онлайн и когда заходил')
         .toJSON(),
