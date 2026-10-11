@@ -107,7 +107,7 @@ async function main() {
     manager.on('markerSpawn', ({ marker }) => {
       const grid = gridLabel(marker.x, marker.y, manager.mapSize);
       const name = marker.name || markerLabelRu(marker.type);
-      chatLog.line(`[Событие] ${name} — ${grid}`);
+      chatLog.line(`[Событие] ${name} — ${grid}`, manager.accountName);
       if (ch('events')) {
         const embed = new EmbedBuilder()
           .setTitle(`${markerEmoji(marker.type)} ${name}`)
@@ -131,7 +131,7 @@ async function main() {
       analytics.death(steamId, name, x, y);
       players.addDeath(steamId, name);
       const grid = gridLabel(x || 0, y || 0, manager.mapSize);
-      chatLog.line(`[Смерть] ${name} умер — ${grid}`);
+      chatLog.line(`[Смерть] ${name} умер — ${grid}`, manager.accountName);
       if (ch('deaths')) {
         const embed = new EmbedBuilder()
           .setTitle('☠️ Смерть тиммейта')
@@ -149,6 +149,14 @@ async function main() {
     manager.on('teamNote', (note) => {
       const grid = gridLabel(note.x, note.y, manager.mapSize);
       const who = note.by === 'leader' ? 'метка лидера' : 'метка команды';
+      // Когда тиммейт умирает, игра САМА ставит командную метку на месте смерти
+      // (маркер трупа) — она дублирует «Смерть тиммейта», поэтому не показываем.
+      const corpseMarker =
+        note.by !== 'leader' &&
+        manager
+          .recentDeaths()
+          .some((d) => Date.now() - d.at < 45000 && gridLabel(d.x, d.y, manager.mapSize) === grid);
+      if (corpseMarker) return;
       if (!ch('events')) return;
       const embed = new EmbedBuilder()
         .setTitle('📍 Метка на карте')
@@ -162,7 +170,7 @@ async function main() {
     manager.on('memberOnline', ({ steamId, name, online }) => {
       analytics.memberOnline(steamId, name, online);
       players.setOnline(steamId, name, online);
-      chatLog.line(`[Статус] ${name} ${online ? 'зашёл на сервер' : 'вышел с сервера'}`);
+      chatLog.line(`[Статус] ${name} ${online ? 'зашёл на сервер' : 'вышел с сервера'}`, manager.accountName);
       if (!ch('alerts')) return;
       discord.sendToChannel(
         ch('alerts'),
@@ -202,6 +210,21 @@ async function main() {
     manager.on('error', () => {
       /* already logged */
     });
+  });
+
+  // Discord-канал логов: каждая строка chat.log дублируется туда.
+  // Приоритет канала: свой на акаунт (channelsPerAccount.<имя>.logs)
+  // -> общий (channels.logs). Если оба пустые — в Discord ничего не шлём.
+  chatLog.on('line', (entry) => {
+    if (!entry || !entry.text) return;
+    const per = config.discord.channelsPerAccount || {};
+    const id =
+      (entry.account && per[entry.account] && per[entry.account].logs) ||
+      (config.discord.channels && config.discord.channels.logs) ||
+      '';
+    if (!id) return;
+    const who = entry.account ? ` • ${entry.account}` : '';
+    discord.sendToChannel(String(id), `\`${entry.at}\` ${entry.text}${who}`);
   });
 
   // --------------------------------------------------------- Discord events
@@ -360,10 +383,15 @@ async function handleSlash(interaction, { managers, primary, webMap, analytics, 
         }
         if (!text) return interaction.reply({ content: 'Пустой текст.', ephemeral: true });
         const msg = (style === 'alert' ? '⚠ ВАЖНО: ' : '') + text;
-        const ok = target.sendTeamMessage(msg);
+        // Чтобы в игровом чате /say выделялось: префикс «📢 » по умолчанию,
+        // можно поменять в config.json -> settings.sayGameFormat («{message}» — это текст).
+        const fmt = (config.settings.sayGameFormat || '📢 {message}')
+          .replace('{message}', msg)
+          .slice(0, 128);
+        const ok = target.sendTeamMessage(fmt);
         return interaction.reply({
           content: ok
-            ? `✅ Отправлено в игру от **${target.accountName}**: «${msg}»`
+            ? `✅ Отправлено в игру от **${target.accountName}**: «${fmt}»`
             : '❌ Не удалось отправить в чат игры.',
           ephemeral: true,
         });

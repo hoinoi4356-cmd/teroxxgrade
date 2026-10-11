@@ -33,6 +33,7 @@ function loadConfig() {
   parsed.settings.relayGameToDiscord = parsed.settings.relayGameToDiscord !== false;
   parsed.settings.relayClanChat = parsed.settings.relayClanChat !== false;
   parsed.settings.discordToGameFormat = parsed.settings.discordToGameFormat || '[Discord] {author}: {message}';
+  parsed.settings.sayGameFormat = parsed.settings.sayGameFormat || '📢 {message}';
   parsed.settings.pollMapMarkersSeconds = Number(parsed.settings.pollMapMarkersSeconds) || 20;
   parsed.settings.webMap = parsed.settings.webMap || {};
   parsed.settings.webMap.port = Number(parsed.settings.webMap.port) || 8787;

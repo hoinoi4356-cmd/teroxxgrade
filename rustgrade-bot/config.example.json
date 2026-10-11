@@ -8,8 +8,10 @@
       "events": "",
       "deaths": "",
       "alerts": "",
-      "status": ""
-    }
+      "status": "",
+      "logs": ""
+    },
+    "channelsPerAccount": {}
   },
   "rustplus": {
     "serverIp": "",
@@ -25,6 +27,7 @@
     "relayGameToDiscord": true,
     "relayClanChat": true,
     "discordToGameFormat": "[Discord] {author}: {message}",
+    "sayGameFormat": "📢 {message}",
     "pollMapMarkersSeconds": 20,
     "webMap": {
       "enabled": true,
