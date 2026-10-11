@@ -15,13 +15,14 @@ function lettersToIndex(s) {
  * in team chat. Replies are kept within Rust's 128-char team chat limit.
  */
 class GameCommands {
-  constructor({ manager, config, webMap, analytics, steam, players }) {
+  constructor({ manager, config, webMap, analytics, steam, players, discord }) {
     this.manager = manager;
     this.config = config;
     this.webMap = webMap;
     this.analytics = analytics || null;
     this.steam = steam || null;
     this.players = players || null;
+    this.discord = discord || null;
     this.prefix = (config.settings && config.settings.prefix) || '!';
   }
 
@@ -37,7 +38,7 @@ class GameCommands {
 
     switch (cmd) {
       case 'help':
-        return this._reply('Команды: !pop !time !online !events !map !wipe !stats !player !track !leader !players !near !offline !warn !grid');
+        return this._reply('Команды: !pop !time !online !events !map !wipe !stats !player !track !leader !players !near !offline !warn !grid !raid');
       case 'pop':
         return this._cmdPop();
       case 'time':
@@ -75,6 +76,8 @@ class GameCommands {
         return this._cmdWarn(args);
       case 'grid':
         return this._cmdGrid(args);
+      case 'raid':
+        return this._cmdRaid(args, steamId, name);
       default:
         return undefined;
     }
@@ -259,6 +262,32 @@ class GameCommands {
       );
     }
     return this._reply('Формат: !grid X Y (координаты) или !grid A1 (квадрат)');
+  }
+
+  // Тревога «нас рейдят»: пишем в чат команды + в Discord (приватный канал) с @everyone.
+  _cmdRaid(args, steamId, who) {
+    const gridArg = (args[0] || '').trim().toUpperCase();
+    let grid = gridArg;
+    if (!grid && this.manager.teamMemberStates) {
+      const me = this.manager
+        .teamMemberStates()
+        .find((s) => String(s.steamId) === String(steamId));
+      if (me && me.x != null && me.y != null) {
+        grid = gridLabel(Math.round(Number(me.x)), Math.round(Number(me.y)), this.manager.mapSize);
+      }
+    }
+    const at = grid ? ` Квадрат ${grid}` : '';
+    this._reply(`[РЕЙД!] Нас рейдят!${at} (${who || '?'})`);
+    if (!this.discord) return;
+    const ch =
+      (this.config.discord.channels && this.config.discord.channels.raid) ||
+      (this.config.discord.channels && this.config.discord.channels.alerts) ||
+      '';
+    if (!ch) return;
+    this.discord.sendToChannel(
+      String(ch),
+      `@everyone 🚨 **РЕЙД! Нас рейдят!**${at} • вызов от **${who || '?'}**`
+    );
   }
 
   // Разбивает строки на сообщения по лимиту чата Rust (128 символов).

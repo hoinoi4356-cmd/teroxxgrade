@@ -63,7 +63,7 @@ async function main() {
   managers.forEach((manager, i) => {
     const account = accounts[i];
     const tag = account.name || `#${i + 1}`;
-    const gameCommands = new GameCommands({ manager, config, webMap, analytics, steam, players });
+    const gameCommands = new GameCommands({ manager, config, webMap, analytics, steam, players, discord });
 
     manager.on('connected', async () => {
       const info = await manager.getInfoAsync();
