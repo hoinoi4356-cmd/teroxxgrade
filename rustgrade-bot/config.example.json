@@ -27,7 +27,7 @@
     "relayGameToDiscord": true,
     "relayClanChat": true,
     "discordToGameFormat": "[Discord] {author}: {message}",
-    "sayGameFormat": "📢 {message}",
+    "sayGameFormat": ">>> {message}",
     "pollMapMarkersSeconds": 20,
     "webMap": {
       "enabled": true,

@@ -382,10 +382,11 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
           return interaction.reply({ content: `Аккаунт ${target.accountName} не подключён к Rust+.`, ephemeral: true });
         }
         if (!text) return interaction.reply({ content: 'Пустой текст.', ephemeral: true });
-        const msg = (style === 'alert' ? '⚠ ВАЖНО: ' : '') + text;
-        // Чтобы в игровом чате /say выделялось: префикс «📢 » по умолчанию,
-        // можно поменять в config.json -> settings.sayGameFormat («{message}» — это текст).
-        const fmt = (config.settings.sayGameFormat || '📢 {message}')
+        const msg = (style === 'alert' ? '[ВАЖНО] ' : '') + text;
+        // Чтобы в игровом чате /say выделялось: текстовый префикс «>>> » по
+        // умолчанию (эмодзи в чате Rust не рендерятся — показываются как □).
+        // Формат меняется в config.json -> settings.sayGameFormat («{message}» — текст).
+        const fmt = (config.settings.sayGameFormat || '>>> {message}')
           .replace('{message}', msg)
           .slice(0, 128);
         const ok = target.sendTeamMessage(fmt);
