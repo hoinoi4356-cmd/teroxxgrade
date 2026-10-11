@@ -133,12 +133,9 @@ async function main() {
       const grid = gridLabel(x || 0, y || 0, manager.mapSize);
       chatLog.line(`[Смерть] ${name} умер — ${grid}`, manager.accountName);
       if (ch('deaths')) {
-        // Если игрок привязал Steam к Discord (/link) — пингуем его.
-        const linked = players.get(steamId);
-        const mention = linked && linked.discordId ? ` <@${linked.discordId}>` : '';
         const embed = new EmbedBuilder()
           .setTitle('☠️ Смерть тиммейта')
-          .setDescription(`**${name}** умер — квадрат **${grid}**${mention}`)
+          .setDescription(`**${name}** умер — квадрат **${grid}**`)
           .setFooter({ text: tag })
           .setColor(0xf85149)
           .setTimestamp();
@@ -462,6 +459,7 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
         }
         const sum = analytics.summary();
         const top = members.slice(0, 10);
+        const disc = await resolveDiscordNames(players, top, discord);
         const embed = new EmbedBuilder()
           .setTitle('📊 Статистика команды (текущий вайп)')
           .setDescription(
@@ -470,7 +468,8 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
                 const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
                 const sp = steam && steam.peek(m.steamId);
                 const g = sp && sp.rustHours != null ? ` • 🎮${Math.round(sp.rustHours)}ч` : '';
-                return `${medal} **${m.name}** ${m.online ? '🟢' : '⚫'} — ${fmt(m.onlineSeconds)} • ☠️ ${m.deaths}${g}`;
+                const tag = disc.has(String(m.steamId)) ? ` (@${disc.get(String(m.steamId))})` : '';
+                return `${medal} **${m.name}**${tag} ${m.online ? '🟢' : '⚫'} — ${fmt(m.onlineSeconds)} • ☠️ ${m.deaths}${g}`;
               })
               .join('\n')
           )
@@ -496,6 +495,7 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
         if (!rows.length) {
           return interaction.reply({ content: 'Статистики за этот период пока нет.', ephemeral: true });
         }
+        const disc = await resolveDiscordNames(players, rows, discord);
         const fmt = (s) => {
           s = Math.max(0, Math.round(s));
           const h = Math.floor(s / 3600);
@@ -506,10 +506,10 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
         };
         const nameCol = Math.max(6, ...rows.map((m) => (m.name || '').length)) + 2;
         const table = rows
-          .map(
-            (m, i) =>
-              `${i + 1}. ${m.online ? '🟢' : '⚫'} ${(m.name || '?').padEnd(nameCol)}${fmt(m.onlineSeconds)}${m.sessions ? `  · ${m.sessions} сес.` : ''}`
-          )
+          .map((m, i) => {
+            const tag = disc.has(String(m.steamId)) ? ` (@${disc.get(String(m.steamId))})` : '';
+            return `${i + 1}. ${m.online ? '🟢' : '⚫'} ${(m.name || '?').padEnd(nameCol)}${fmt(m.onlineSeconds)}${m.sessions ? `  · ${m.sessions} сес.` : ''}${tag}`;
+          })
           .join('\n');
         const embed = new EmbedBuilder()
           .setTitle(isWeek ? '🏆 Топ недели (наиграно)' : '🏆 Топ за вайп (наиграно)')
@@ -682,7 +682,7 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
         const name = (profile && profile.name) || q;
         players.linkDiscord(steamId, interaction.user.id, name);
         return interaction.reply({
-          content: `✅ Привязано: **${name}** (Steam ID \`${steamId}\`) к твоему Discord.\nТеперь при его смерти и для «${name}» в статистике бот знает, что это ты.`,
+          content: `✅ Привязано: **${name}** (Steam ID \`${steamId}\`) к твоему Discord.\nТеперь в статистике и /top бот покажет твой Discord-ник.`,
           ephemeral: true,
         });
       }
@@ -714,7 +714,7 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
         }
         const user = await discord.client.users.fetch(e.discordId).catch(() => null);
         return interaction.reply({
-          content: `**${playerName}** (${steamId}) — это ${user ? `**${user.username}**` : `<@${e.discordId}>`}.`,
+          content: `**${playerName}** (${steamId}) — это ${user ? `**${user.username}**` : `\`${e.discordId}\``}.`,
           ephemeral: true,
         });
       }
@@ -729,6 +729,20 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
       /* ignore */
     }
   }
+}
+
+// Discord-ники привязанных игроков (/link): steamId -> username.
+async function resolveDiscordNames(players, rows, discord) {
+  const out = new Map();
+  if (!players || !discord || !discord.client) return out;
+  const jobs = rows.map(async (m) => {
+    const e = players.get(m.steamId);
+    if (!e || !e.discordId) return;
+    const user = await discord.client.users.fetch(e.discordId).catch(() => null);
+    if (user) out.set(String(m.steamId), user.username);
+  });
+  await Promise.allSettled(jobs);
+  return out;
 }
 
 function fmtDurLong(s) {
