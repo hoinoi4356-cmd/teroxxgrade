@@ -16,6 +16,12 @@ unban.js
 noire-atelier/
 ogoniok/
 
+# Помічник для вивантаження історії Discord і його результати
+read-history.js
+history-*.log
+history-*.json
+token.txt
+
 # ОС
 Thumbs.db
 desktop.ini
