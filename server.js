@@ -73,24 +73,35 @@ function prune() {
 function cleanRow(v) {
   if (!v || typeof v !== 'object') return null;
 
-  const num = function (x, max) {
-    const n = Math.round(Number(x) || 0);
-    return Math.min(max, Math.max(-max, n));
-  };
   const str = function (x, max) {
     return String(x == null ? '' : x).slice(0, max);
   };
 
+  /**
+   * Число з обмеженням.
+   * `Number(null)` = 0, але `Number(NaN)` = NaN — а Math.min/max із NaN
+   * повертають NaN, який потім у JSON перетворюється на `null`. Тому
+   * спершу перевіряємо кінцевість.
+   */
+  const num = function (x, max) {
+    const n = Math.round(Number(x));
+    if (!Number.isFinite(n)) return 0;
+    return Math.min(max, Math.max(-max, n));
+  };
+  /* Та сама обмеження, але нижня межа — нуль: підсумки й баланс не можуть
+     бути від'ємними, інакше клієнт зміг би накрутити таблицю мінусами. */
+  const pos = function (x, max) { return Math.max(0, num(x, max)); };
+
   const row = {
     name:    str(v.name, 24) || 'Без імені',
     avatar:  str(v.avatar, 9000),       // data-URL прев'ю; далі обрізаємо
-    won:     num(v.won, 1e12),
-    spent:   num(v.spent, 1e12),
-    net:     num(v.net, 1e12),
-    wins:    num(v.wins, 1e6),
-    plays:   num(v.plays, 1e6),
-    balance: num(v.balance, 1e12),
-    items:   num(v.items, 1e6)
+    won:     pos(v.won, 1e12),
+    spent:   pos(v.spent, 1e12),
+    net:     num(v.net, 1e12),          // підсумок може бути від'ємним
+    wins:    pos(v.wins, 1e6),
+    plays:   pos(v.plays, 1e6),
+    balance: pos(v.balance, 1e12),
+    items:   pos(v.items, 1e6)
   };
 
   /* аватар — лише наш data-URL, і не більше 6 КБ, щоб фів не роздувався */
@@ -166,14 +177,52 @@ const MIME = {
   '.woff2':'font/woff2'
 };
 
-function serveStatic(req, res, urlPath) {
-  let rel = decodeURIComponent(urlPath.split('?')[0]);
-  if (rel === '/' || rel === '') rel = '/index.html';
+/**
+ * Що взагалі можна віддавати.
+ *
+ * У тій самій папці лежать сторонні проєкти (папка `discord/`, папка
+ * `rustgrade-bot/`, різні `.bat`, `package.json`, `server.js`, `README.md`).
+ * Вони не є частиною сайту. Якби віддавалося «будь-який файл із папки»,
+ * усе це стало б публічно завантажуваним по прямому посиланню.
+ *
+ * Тому тут whitelist, а не blacklist: окрім кореневого `index.html`,
+ * підлягає лише `assets/` з дозволеним розширенням.
+ */
+function isAllowed(norm, ext) {
+  if (norm === '/index.html') return true;
+  if (norm.startsWith('/assets/')) return !!MIME[ext];
+  return false;
+}
 
-  /* захист від виходу за межі папки: ../ та абсолютні шляхи */
-  const full = path.join(ROOT, path.normalize(rel).replace(/^(\.\.[/\\])+/, ''));
-  if (!full.startsWith(ROOT)) {
-    res.writeHead(403).end('Forbidden');
+function serveStatic(req, res, urlPath) {
+  let raw = decodeURIComponent(urlPath.split('?')[0]);
+  if (raw === '' || raw === '/') raw = '/index.html';
+
+  /* Спершу нормалізуємо, і тільки потім приймаємо рішення.
+     Якщо нормалізувати пізніше, то `/assets/../server.js` виглядає
+     як «лежить у assets/», хоча насправді віддає файл з кореня. */
+  const norm = path.posix.normalize(raw).replace(/\\/g, '/');
+  if (!norm.startsWith('/')) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('404');
+    return;
+  }
+
+  const ext = path.extname(norm).toLowerCase();
+
+  /* Сторонні файли віддаємо як відсутні, а не «заборонені»:
+     не підтверджуємо, що вони взагалі існують. */
+  if (!isAllowed(norm, ext)) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('404');
+    return;
+  }
+
+  /* Остаточний захист: зроблений повний шлях має лежати ВСЕРЕДИНІ
+     проєкту і на початку після нього має бути розділювач шляху —
+     інакше `...\Default Project-evil` пройшов би перевірку. */
+  const full = path.join(ROOT, norm.slice(1));
+  const within = full === ROOT || full.startsWith(ROOT + path.sep);
+  if (!within) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('404');
     return;
   }
 
@@ -182,7 +231,6 @@ function serveStatic(req, res, urlPath) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('404');
       return;
     }
-    const ext = path.extname(full).toLowerCase();
     const head = {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       'Content-Length': st.size,
@@ -201,19 +249,32 @@ function serveStatic(req, res, urlPath) {
 
 /* ------------------------------------------------------------------ роути */
 
-function readBody(req, cb) {
+function readBody(req, res, cb) {
   let size = 0;
+  /* Викликати cb рівно один раз: раніше на перевищенні ліміту ми
+     рвали з'єднання і ніколи не відповідали — запит просто зависав. */
+  let done = false;
+  const once = function (arg) { if (!done) { done = true; cb(arg); } };
   const chunks = [];
   req.on('data', function (c) {
     size += c.length;
-    if (size > MAX_BODY) { req.destroy(); return; }
+    if (size > MAX_BODY) {
+      /* Спершу відповідаємо (cb відсилає 413), і тільки після того
+         викидаємо решту тіла.
+         Раніше ми спочатку рвали сокет — клієнт отримував обривок запиту
+         без відповіді, а наступний запит того самого з'єднання падав. */
+      once({ __tooBig: true });
+      req.resume();
+      return;
+    }
     chunks.push(c);
   });
   req.on('end', function () {
-    try { cb(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
-    catch (e) { cb(null); }
+    if (done) return;
+    try { once(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+    catch (e) { once(null); }
   });
-  req.on('error', function () { cb(null); });
+  req.on('error', function () { once(null); });
 }
 
 const server = http.createServer(function (req, res) {
@@ -232,7 +293,10 @@ const server = http.createServer(function (req, res) {
 
   /* --- POST /api/report --- */
   if (req.method === 'POST' && url.pathname === '/api/report') {
-    return readBody(req, function (body) {
+    return readBody(req, res, function (body) {
+      if (body && body.__tooBig) {
+        return sendJSON(res, 413, { ok: false, error: 'body too large' });
+      }
       const pid = cleanPid(body && body.pid);
       if (!pid) return sendJSON(res, 400, { ok: false, error: 'bad pid' });
 
@@ -243,9 +307,17 @@ const server = http.createServer(function (req, res) {
       const bucket = board[String(day)] || (board[String(day)] = {});
       let stored = 0;
 
+      /* Спершу прибираємо всі старі рядки цього пристрою.
+         Раніше ключем було `pid|нік|індекс`, тож після видалення акаунта
+         або перейменування старий рядок лишався б у таблиці назавжди —
+         і гравець з'являвся б двічі. */
+      const prefix = pid + '|';
+      Object.keys(bucket).forEach(function (k) {
+        if (k.indexOf(prefix) === 0) delete bucket[k];
+      });
+
       /* Надсилаємо ВСІ акаунти браузера, а не лише поточний: так у таблиці
-         з'являються й ті, що створювали раніше. Ключ — пристрій + нік,
-         тому повторний запит просто оновлює той самий рядок. */
+         з'являються й ті, що створювали раніше. */
       list.slice(0, 40).forEach(function (v, i) {
         const row = cleanRow(v);
         if (!row) return;
@@ -258,6 +330,9 @@ const server = http.createServer(function (req, res) {
         stored++;
       });
 
+      /* Нічого не прийняли — і на диск не пишемо, і відповідь — помилка. */
+      if (!stored) return sendJSON(res, 400, { ok: false, error: 'nothing stored' });
+
       prune();
       saveBoard();
       return sendJSON(res, 200, {
@@ -266,8 +341,13 @@ const server = http.createServer(function (req, res) {
     });
   }
 
-  if (req.pathname === undefined) return;
+  /* Був баг: req.pathname не існує у node:http, тому ця умова завжди
+     істинна і кожен запит на файл закінчувався мовчки, без відповіді —
+     браузер просто чекав і ніколи не отримував відповіді. */
   if (req.method !== 'GET' && req.method !== 'HEAD') {
+    /* req.resume() — викинути непрочитане тіло запиту, інакше клієнт,
+       що надіслав POST, отримає обривок з'єднання замість відповіді. */
+    req.resume();
     return res.writeHead(405).end('Method Not Allowed');
   }
   serveStatic(req, res, req.url);

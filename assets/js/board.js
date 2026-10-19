@@ -99,9 +99,28 @@
     const seen = {};
     const rows = [];
 
+    /* Якщо ім'я дублюється (та сама людина з двох браузерів чи два гравці
+       з однаковим ніком), залишаємо НАЙКРАЩИЙ рядок. Робимо це явним
+       порівнянням, а не «перший перемагає»: перший виграє лише коли
+       дані вже відсортовані, інакше в таблиці міг би лишитися слабший
+       рядок. Критерій збігається з сортуванням сервера. */
+    function better(a, b) {
+      if (a.won !== b.won) return a.won > b.won;
+      if (a.net !== b.net) return a.net > b.net;
+      if (a.balance !== b.balance) return a.balance > b.balance;
+      return (a.at || 0) > (b.at || 0);
+    }
+
+    const best = {};
     remote.forEach(function (r) {
-      const me = !!mine[r.name];
-      seen[r.name] = true;
+      const prev = best[r.name];
+      if (!prev || better(r, prev)) best[r.name] = r;
+    });
+
+    Object.keys(best).forEach(function (name) {
+      const r = best[name];
+      if (seen[name]) return;
+      seen[name] = true;
       rows.push({
         /* Поле називається id, а не key, навмисно: у ключі акаунта лежить
            пароль, і в таблиці лідерборду йому не місце. */
@@ -111,7 +130,7 @@
         won: r.won, spent: r.spent, net: r.net,
         wins: r.wins, plays: r.plays,
         balance: r.balance, items: r.items,
-        isMe: me,
+        isMe: !!mine[r.name],
         createdAt: r.at || 0
       });
     });
