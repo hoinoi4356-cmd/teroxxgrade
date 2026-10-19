@@ -6,6 +6,16 @@ _*.html
 # Лідерборд, який сервер створює під час роботи
 data/
 
+# Інші проєкти й скрипти, які лежать у цій же папці
+# (не частина сайту; у них є власні репозиторії й свої токени)
+node_modules/
+package-lock.json
+.next/
+bot-*.js
+unban.js
+noire-atelier/
+ogoniok/
+
 # ОС
 Thumbs.db
 desktop.ini
