@@ -46,6 +46,7 @@ class DiscordBot extends EventEmitter {
 
     this.client.on(Events.MessageCreate, (msg) => {
       if (msg.author.bot || !msg.guild) return;
+      if (!msg.content) return;
       const channels = this.config.discord.channels || {};
       if (channels.teamChat && msg.channelId === String(channels.teamChat)) {
         this.emit('discordTeamChat', msg);
@@ -58,7 +59,25 @@ class DiscordBot extends EventEmitter {
   }
 
   async login() {
-    await this.client.login(this.config.discord.token);
+    try {
+      await this.client.login(this.config.discord.token);
+    } catch (error) {
+      const message = String(error && error.message ? error.message : error).toLowerCase();
+      if (!message.includes('disallowed intents')) throw error;
+      log.warn(
+        'Discord: Message Content intent выключен в Developer Portal. ' +
+        'Переподключаюсь без него — чат-релей Discord → игра будет недоступен, ' +
+        'пока не включишь Message Content Intent.'
+      );
+      try { this.client.destroy(); } catch (destroyError) {}
+      this.ready = false;
+      this.client = new Client({
+        intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+        partials: [Partials.Channel],
+      });
+      this._setup();
+      await this.client.login(this.config.discord.token);
+    }
   }
 
   // Ждёт, пока Discord-клиент будет готов (чтобы не терять сообщения,

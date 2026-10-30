@@ -31,3 +31,5 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+# Local secrets (RCON/admin password)
+nexus-site.config.json
