@@ -1,0 +1,33 @@
+# Render Blueprint для RUSTGRADE.
+#
+# ВАЖЛИВО: це саме Web Service, а не Static Site. Лідерборду потрібен
+# сервер (`/api/board`, `/api/report`). Якщо на Render вже є Static Site
+# `teroxxgrade`, його треба видалити, інакше ім'я зайняте і Blueprint
+# не створить новий сервіс. Після видалення створи Web Service з тим самим
+# ім'ям — URL `https://teroxxgrade.onrender.com` збережеться.
+services:
+  - type: web
+    name: teroxxgrade
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: echo "no build required"
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: TRUST_PROXY
+        value: "1"
+
+    # Безкоштовний план: файлова система ефемерна, board.json скидається
+    # після рестарту. Для постійного лідерборду потрібен платний план і disk:
+    #   plan: starter
+    #   disk:
+    #     name: rustgrade-data
+    #     mountPath: /var/data
+    #     sizeGB: 1
+    # і тоді додай змінну DATA_DIR=/var/data.

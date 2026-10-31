@@ -351,8 +351,14 @@ catalog.js → data.js → icons.js → store.js → ui.js → board.js → whee
 | Build Command    | *(порожньо)*        |
 | Start Command    | `node server.js`    |
 | Publish directory| *(не потрібен)*     |
+| Health Check     | `/healthz`          |
 
 `npm install` не потрібен — у `server.js` немає залежностей.
+
+У репозиторії є готовий `render.yaml`. Якщо на Render вже стоїть **Static
+Site** з ім'ям `teroxxgrade`, його треба видалити перед створенням Web
+Service: інакше ім'я зайняте. Після створення Web Service з тим самим ім'ям
+адреса `https://teroxxgrade.onrender.com` залишиться тією ж.
 
 ### Що сервер віддає, а що ні
 
