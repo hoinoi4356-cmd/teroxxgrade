@@ -39,6 +39,18 @@ function loadConfig() {
   parsed.settings.webMap.port = Number(parsed.settings.webMap.port) || 8787;
   parsed.settings.eventMarkerTypes = (parsed.settings.eventMarkerTypes || [4, 5, 6, 8]).map(Number);
   parsed.settings.devices = Array.isArray(parsed.settings.devices) ? parsed.settings.devices : [];
+  // Реальний онлайн сервера (A2S/Rust+) — без токенів і паролів.
+  const online = parsed.settings.online || {};
+  parsed.settings.online = {
+    enabled: online.enabled !== false,
+    provider: String(online.provider || 'a2s').toLowerCase(),
+    host: String(online.host || parsed.rustplus.serverIp || '127.0.0.1'),
+    queryPort: Number(online.queryPort) || 28017,
+    refreshSeconds: Math.max(20, Number(online.refreshSeconds) || 60),
+    presence: online.presence !== false,
+    voiceChannelId: String(online.voiceChannelId || ''),
+    voiceChannelFormat: String(online.voiceChannelFormat || 'Онлайн: {players}/{max}'),
+  };
   parsed.accounts = Array.isArray(parsed.accounts) ? parsed.accounts : [];
 
   return { ok: true, config: parsed };

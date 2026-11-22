@@ -31,5 +31,15 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# Секрети — ніколи не комітити у GitHub
+.env
+.env.local
+.env.*.local
+
 # Local secrets (RCON/admin password)
 nexus-site.config.json
+
+# Deploy secrets/logs
+deploy/config.json
+deploy/*.log

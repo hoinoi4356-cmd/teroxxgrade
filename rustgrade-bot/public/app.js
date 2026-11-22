@@ -513,7 +513,7 @@ async function tick() {
     const res = await fetch('/api/state', { cache: 'no-store' });
     const s = await res.json();
     nameEl.textContent = s.name || '—';
-    popEl.textContent = `${s.players}/${s.maxPlayers}`;
+    popEl.textContent = `${s.playersOnline ?? 0}/${s.maxPlayers ?? 0}`;
     wipeEl.textContent = wipeText(s.wipeTime);
     updatedEl.textContent = 'обновлено ' + new Date(s.updatedAt).toLocaleTimeString();
 

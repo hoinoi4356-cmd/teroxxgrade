@@ -7,9 +7,13 @@ const {
   Partials,
   Events,
   SlashCommandBuilder,
+  MessageActionRow,
+  MessageButton,
   REST,
   Routes,
   EmbedBuilder,
+  ActivityType,
+  ChannelType,
 } = require('discord.js');
 const log = require('./logger');
 
@@ -18,6 +22,9 @@ class DiscordBot extends EventEmitter {
     super();
     this.config = config;
     this.ready = false;
+    this._voiceRenameAt = 0;
+    this._voiceRenameText = '';
+    this._voiceRenameChannel = '';
     this.client = new Client({
       intents: [
         GatewayIntentBits.Guilds,
@@ -46,7 +53,6 @@ class DiscordBot extends EventEmitter {
 
     this.client.on(Events.MessageCreate, (msg) => {
       if (msg.author.bot || !msg.guild) return;
-      if (!msg.content) return;
       const channels = this.config.discord.channels || {};
       if (channels.teamChat && msg.channelId === String(channels.teamChat)) {
         this.emit('discordTeamChat', msg);
@@ -56,28 +62,14 @@ class DiscordBot extends EventEmitter {
     });
 
     this.client.on(Events.Error, (err) => log.error('Discord client error:', err.message));
+
+    this.client.on(Events.MessageComponentInteraction, (interaction) => {
+      this.emit('component', interaction);
+    });
   }
 
   async login() {
-    try {
-      await this.client.login(this.config.discord.token);
-    } catch (error) {
-      const message = String(error && error.message ? error.message : error).toLowerCase();
-      if (!message.includes('disallowed intents')) throw error;
-      log.warn(
-        'Discord: Message Content intent выключен в Developer Portal. ' +
-        'Переподключаюсь без него — чат-релей Discord → игра будет недоступен, ' +
-        'пока не включишь Message Content Intent.'
-      );
-      try { this.client.destroy(); } catch (destroyError) {}
-      this.ready = false;
-      this.client = new Client({
-        intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
-        partials: [Partials.Channel],
-      });
-      this._setup();
-      await this.client.login(this.config.discord.token);
-    }
+    await this.client.login(this.config.discord.token);
   }
 
   // Ждёт, пока Discord-клиент будет готов (чтобы не терять сообщения,
@@ -118,17 +110,73 @@ class DiscordBot extends EventEmitter {
     return this.sendToChannel(channelId, { embeds: [embed] });
   }
 
+  /**
+   * Онлайн у статусі бота (видно в списку учасників). Без мережевих запитів
+   * і без прав — просто presence.
+   */
+  setOnlinePresence(text) {
+    if (!text || !this.client.user) return false;
+    try {
+      this.client.user.setPresence({
+        status: 'online',
+        activities: [{ name: String(text).slice(0, 128), type: ActivityType.Watching }],
+      });
+      return true;
+    } catch (err) {
+      log.warn('Discord: не вдалося оновити статус:', err.message);
+      return false;
+    }
+  }
+
+  /**
+   * Перейменувати голосовий канал під онлайн. Discord лімітує перейменування
+   * (2 зміни на 10 хв на канал), тому не частіше ніж раз на 5 хвилин і лише
+   * коли текст справді змінився.
+   */
+  async setOnlineVoiceChannel(channelId, name, minIntervalMs = 5 * 60 * 1000) {
+    if (!channelId || !name || !this.client.user) return false;
+    const now = Date.now();
+    if (this._voiceRenameAt && now - this._voiceRenameAt < minIntervalMs) return false;
+    if (this._voiceRenameText === name && this._voiceRenameChannel === String(channelId)) return false;
+    try {
+      const channel = await this.client.channels.fetch(String(channelId));
+      if (!channel) return false;
+      if (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice) {
+        log.warn('Discord: онлайн-канал не голосовий — перейменування пропущено');
+        return false;
+      }
+      if (channel.name === name) {
+        this._voiceRenameAt = now;
+        this._voiceRenameText = name;
+        this._voiceRenameChannel = String(channelId);
+        return true;
+      }
+      await channel.setName(String(name).slice(0, 100));
+      this._voiceRenameAt = now;
+      this._voiceRenameText = name;
+      this._voiceRenameChannel = String(channelId);
+      return true;
+    } catch (err) {
+      // 429 або немає прав Manage Channels — не валимо бота, просто логуємо
+      // і не смикаємо канал частіше ніж раз на 5 хвилин.
+      this._voiceRenameAt = now;
+      log.warn('Discord: онлайн-канал не оновлено:', err.message);
+      return false;
+    }
+  }
+
   async registerSlashCommands() {
     const body = this.slashDefinition();
     const rest = new REST({ version: '10' }).setToken(this.config.discord.token);
-    const targets = [];
-    if (this.config.discord.guildId) targets.push(String(this.config.discord.guildId));
-    for (const g of this.client.guilds.cache.values()) targets.push(String(g.id));
-    const guilds = [...new Set(targets)];
-    for (const gid of guilds) {
-      await rest.put(Routes.applicationGuildCommands(this.client.user.id, gid), { body });
+    if (this.config.discord.guildId) {
+      await rest.put(
+        Routes.applicationGuildCommands(this.client.user.id, String(this.config.discord.guildId)),
+        { body }
+      );
+    } else {
+      await rest.put(Routes.applicationCommands(this.client.user.id), { body });
     }
-    log.info(`Discord: зарегистрировано ${body.length} slash-команд в ${guilds.length} серверах`);
+    log.info(`Discord: зарегистрировано ${body.length} slash-команд`);
   }
 
   slashDefinition() {
@@ -203,30 +251,8 @@ class DiscordBot extends EventEmitter {
         .setDescription('Кого бот видел: кто онлайн и когда заходил')
         .toJSON(),
       new SlashCommandBuilder().setName('map').setDescription('Ссылка на живую карту сервера').toJSON(),
-      new SlashCommandBuilder()
-        .setName('link')
-        .setDescription('Привязать свой Steam к Discord (ник, Steam ID или ссылка)')
-        .addStringOption((o) =>
-          o
-            .setName('player')
-            .setDescription('Ник из команды, Steam ID (17 цифр) или ссылка на профиль')
-            .setRequired(true)
-        )
-        .toJSON(),
-      new SlashCommandBuilder()
-        .setName('unlink')
-        .setDescription('Убрать привязку своего Steam')
-        .toJSON(),
-      new SlashCommandBuilder()
-        .setName('who')
-        .setDescription('Кто из Discord привязан к этому Steam-аккаунту')
-        .addStringOption((o) =>
-          o
-            .setName('player')
-            .setDescription('Ник или Steam ID')
-            .setRequired(true)
-        )
-        .toJSON(),
+      new SlashCommandBuilder().setName('link').setDescription("Прив'язати сервер через авто-перехват пейрингу Rust+").toJSON(),
+      new SlashCommandBuilder().setName('unlink').setDescription('Відкріпити поточний сервер Rust+ та відкликати токен').toJSON(),
     ];
   }
 

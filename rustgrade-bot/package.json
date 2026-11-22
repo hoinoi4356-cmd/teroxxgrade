@@ -9,7 +9,8 @@
     "dev": "node --watch src/index.js",
     "pair-register": "rustplus --config-file=./data/rustplus-credentials.json fcm-register",
     "pair-listen": "node scripts/pair-listen.js",
-    "check": "node --check src/index.js && node --check src/rustplus-manager.js && node --check src/discord-bot.js && node --check src/game-commands.js && node --check src/web-map.js"
+    "check": "node --check src/index.js && node --check src/rustplus-manager.js && node --check src/discord-bot.js && node --check src/game-commands.js && node --check src/pairing.js && node --check src/web-map.js && node --check src/server-status.js",
+    "test:online": "node test/smoke-online.js"
   },
   "dependencies": {
     "@liamcottle/rustplus.js": "^2.5.0",

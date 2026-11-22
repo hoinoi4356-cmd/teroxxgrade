@@ -22,12 +22,13 @@ const MARKER_EMOJI_UNICODE = {
  * event markers and server info. No extra dependencies.
  */
 class WebMap {
-  constructor({ manager, config, analytics, steam, players }) {
+  constructor({ manager, config, analytics, steam, players, status }) {
     this.manager = manager;
     this.config = config;
     this.analytics = analytics || null;
     this.steam = steam || null;
     this.players = players || null;
+    this.status = status || null;
     this.settings = (config.settings && config.settings.webMap) || {};
     this.port = Number(this.settings.port) || 8787;
     this.enabled = this.settings.enabled !== false;
@@ -61,6 +62,7 @@ class WebMap {
     try {
       const url = (req.url || '/').split('?')[0];
       if (url === '/api/state') return await this._serveState(res);
+      if (url === '/api/status') return await this._serveStatus(res);
       if (url === '/' || url === '/index.html') return this._serveFile(res, 'index.html', 'text/html; charset=utf-8');
       if (url === '/app.js') return this._serveFile(res, 'app.js', 'application/javascript; charset=utf-8');
       if (url === '/app.css') return this._serveFile(res, 'app.css', 'text/css; charset=utf-8');
@@ -86,11 +88,18 @@ class WebMap {
     });
   }
 
+  async _serveStatus(res) {
+    const live = this.status ? await this.status.get() : null;
+    const body = JSON.stringify(live || { ok: false, players: 0, maxPlayers: 0, source: 'none' });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(body);
+  }
+
   async _serveState(res) {
-    const info = (await this.manager.getInfoAsync()) || this.manager._infoCache || null;
-    const map = this.manager._mapCache || (await this.manager.getMapAsync());
-    const team = (this.manager.lastTeamInfo && this.manager.lastTeamInfo.members) || [];
-    const markers = this.manager.currentEventMarkers();
+    const info = (this.manager && ((await this.manager.getInfoAsync()) || this.manager._infoCache)) || null;
+    const map = (this.manager && (this.manager._mapCache || (await this.manager.getMapAsync()))) || null;
+    const team = (this.manager && this.manager.lastTeamInfo && this.manager.lastTeamInfo.members) || [];
+    const markers = this.manager ? this.manager.currentEventMarkers() : [];
 
     let image = null;
     if (map && map.jpgImage) {
@@ -102,12 +111,15 @@ class WebMap {
     }
 
     const an = this.analytics ? this.analytics.summary() : null;
+    const live = this.status ? this.status.snapshot() : null;
 
     const state = {
-      name: (info && info.name) || '',
+      name: (live && live.name) || (info && info.name) || '',
       mapSize: (info && info.mapSize) || 0,
-      players: (info && info.players) || 0,
-      maxPlayers: (info && info.maxPlayers) || 0,
+      playersOnline: live && live.ok ? live.players : (info && info.players) || 0,
+      maxPlayers: (live && live.ok && live.maxPlayers) || (info && info.maxPlayers) || 0,
+      queuedPlayers: (info && info.queuedPlayers) || 0,
+      online: live || null,
       wipeTime: (info && info.wipeTime) || 0,
       image,
       imageWidth: (map && map.width) || 0,

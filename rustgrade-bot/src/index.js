@@ -6,6 +6,8 @@ const RustPlusManager = require('./rustplus-manager');
 const DiscordBot = require('./discord-bot');
 const GameCommands = require('./game-commands');
 const WebMap = require('./web-map');
+const ServerStatus = require('./server-status');
+const PairingService = require('./pairing');
 const { EmbedBuilder } = require('discord.js');
 const { markerEmoji, markerLabelRu, gridLabel } = require('./markers');
 const { describeTime, mskTime } = require('./time-utils');
@@ -37,6 +39,7 @@ async function main() {
 
   const accounts = getAccounts(config);
   const discord = new DiscordBot(config);
+  const pairing = new PairingService(config, discord);
 
   const managers = accounts.map((account) => new RustPlusManager(config, account));
   const primary = managers[0] || null;
@@ -45,7 +48,8 @@ async function main() {
   const steam = new Steam();
   const players = new PlayerRegistry();
   players.start();
-  const webMap = new WebMap({ manager: primary, config, analytics, steam, players });
+  const serverStatus = new ServerStatus({ config, manager: primary });
+  const webMap = new WebMap({ manager: primary, config, analytics, steam, players, status: serverStatus });
 
   const ch = (name) => (config.discord.channels && config.discord.channels[name]) || '';
 
@@ -63,7 +67,7 @@ async function main() {
   managers.forEach((manager, i) => {
     const account = accounts[i];
     const tag = account.name || `#${i + 1}`;
-    const gameCommands = new GameCommands({ manager, config, webMap, analytics, steam, players, discord });
+    const gameCommands = new GameCommands({ manager, config, webMap, analytics, steam, players, discord, status: serverStatus });
 
     manager.on('connected', async () => {
       const info = await manager.getInfoAsync();
@@ -247,13 +251,39 @@ async function main() {
     for (const m of managers) m.sendClanMessage(text);
   });
 
-  discord.on('slash', (interaction) => handleSlash(interaction, { managers, primary, webMap, discord, config, analytics, steam, players }));
+  discord.on('slash', (interaction) => handleSlash(interaction, { managers, primary, webMap, discord, config, analytics, steam, players, pairing, status: serverStatus }));
+  discord.on('component', async (interaction) => {
+    try {
+      await pairing.handleComponent(interaction);
+    } catch (err) {
+      log.error('Pairing: обробка компонента не вдалася:', err.message);
+    }
+  });
+
+  // Живий онлайн: presence бота + (опційно) назва голосового каналу.
+  // Дані — з A2S-запиту до сервера, жодних токенів/паролів.
+  const applyOnline = (s) => {
+    const online = (config.settings && config.settings.online) || {};
+    if (!s || online.enabled === false) return;
+    const ok = s.ok !== false;
+    const pop = ok ? `${s.players}/${s.maxPlayers || '?'}` : '—';
+    if (online.presence !== false) discord.setOnlinePresence(`Онлайн ${pop}`);
+    if (online.voiceChannelId) {
+      const name = String(online.voiceChannelFormat || 'Онлайн: {players}/{max}')
+        .replace('{players}', ok ? String(s.players) : '—')
+        .replace('{max}', ok && s.maxPlayers ? String(s.maxPlayers) : '?')
+        .replace('{name}', s.name || 'Rust');
+      discord.setOnlineVoiceChannel(online.voiceChannelId, name).catch(() => {});
+    }
+  };
+  serverStatus.on('update', applyOnline);
 
   discord.on('ready', () => {
     discord.sendToChannel(
       ch('status'),
       '🤖 **RustBot запущен.** Команды: `/status` `/pop` `/time` `/team` `/events` `/map`'
     );
+    if (serverStatus.snapshot()) applyOnline(serverStatus.snapshot());
   });
 
   // --------------------------------------------------------------- start-up
@@ -261,6 +291,7 @@ async function main() {
   webMap.start();
   for (const m of managers) m.connect();
   if (!managers.length) log.info('Rust+: подключение к игре пропущено — сделайте пейринг (npm run pair-listen).');
+  await pairing.start();
 
   // Сэмпл онлайна сервера для графика в аналитике (раз в минуту).
   const samplePop = async () => {
@@ -277,10 +308,12 @@ async function main() {
   if (sampleTimer.unref) sampleTimer.unref();
 
   await discord.login();
+  serverStatus.start();
 
   const shutdown = () => {
     log.info('Остановка…');
     clearInterval(sampleTimer);
+    serverStatus.stop();
     analytics.stop();
     players.stop();
     webMap.stop();
@@ -296,7 +329,7 @@ async function main() {
   process.on('SIGTERM', shutdown);
 }
 
-async function handleSlash(interaction, { managers, primary, webMap, discord, config, analytics, steam, players }) {
+async function handleSlash(interaction, { managers, primary, webMap, discord, config, analytics, steam, players, pairing, status }) {
   // если аккаунтов нет — сообщаем
   const connectedManagers = managers.filter((m) => m.connected);
   const manager = connectedManagers[0] || primary;
@@ -305,7 +338,7 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
       case 'status': {
         const embed = new EmbedBuilder().setTitle('RustBot — статус');
         if (!managers.length) {
-          embed.setDescription('Ни один Rust+ аккаунт не настроен.');
+          embed.setDescription('Ни один Rust+ аккаунт не настроен (онлайн всё равно работает по A2S).');
         } else {
           for (const m of managers) {
             const info = m.connected ? await m.getInfoAsync() : null;
@@ -317,11 +350,41 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
           }
           embed.addFields({ name: 'Карта', value: webMap.localUrl() || 'выключено', inline: false });
         }
+        // Кешований онлайн — без мережевого запиту, щоб відповісти за 3 с.
+        const live = status ? status.snapshot() : null;
+        if (live) {
+          embed.addFields({
+            name: 'Онлайн сервера',
+            value: live.ok
+              ? `🟢 **${live.players}/${live.maxPlayers || '?'}** • ${sourceLabel(live.source)}`
+              : '⚪ нет ответа — сервер выключен или ещё грузится',
+            inline: false,
+          });
+        }
         embed.setColor(connectedManagers.length ? 0x3fb950 : 0xf85149);
         return interaction.reply({ embeds: [embed], ephemeral: true });
       }
       case 'pop': {
-        if (!manager) return interaction.reply({ content: 'Нет подключённых аккаунтов.', ephemeral: true });
+        const cached = status ? status.snapshot() : null;
+        if (cached && cached.ok) {
+          const bots = cached.bots ? ` (ботов ${cached.bots})` : '';
+          return interaction.reply({
+            content: `Онлайн сервера: **${cached.players}/${cached.maxPlayers || '?'}**${bots} • ${sourceLabel(cached.source)}${cached.name ? ` • ${cached.name}` : ''}`,
+            ephemeral: true,
+          });
+        }
+        if (status) {
+          // Немає кешу — питаємо сервер (може зайняти до кількох секунд).
+          await interaction.deferReply({ ephemeral: true });
+          const live = await status.get();
+          if (live && live.ok) {
+            const bots = live.bots ? ` (ботов ${live.bots})` : '';
+            return interaction.editReply({
+              content: `Онлайн сервера: **${live.players}/${live.maxPlayers || '?'}**${bots} • ${sourceLabel(live.source)}${live.name ? ` • ${live.name}` : ''}`,
+            });
+          }
+        }
+        if (!manager) return interaction.reply({ content: 'Сервер не отвечает, а Rust+ аккаунт не подключён.', ephemeral: true });
         const info = await manager.getInfoAsync();
         if (!info) return interaction.reply({ content: 'Онлайн недоступен.', ephemeral: true });
         return interaction.reply({
@@ -459,7 +522,6 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
         }
         const sum = analytics.summary();
         const top = members.slice(0, 10);
-        const disc = await resolveDiscordNames(players, top, discord);
         const embed = new EmbedBuilder()
           .setTitle('📊 Статистика команды (текущий вайп)')
           .setDescription(
@@ -468,8 +530,7 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
                 const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
                 const sp = steam && steam.peek(m.steamId);
                 const g = sp && sp.rustHours != null ? ` • 🎮${Math.round(sp.rustHours)}ч` : '';
-                const tag = disc.has(String(m.steamId)) ? ` (@${disc.get(String(m.steamId))})` : '';
-                return `${medal} **${m.name}**${tag} ${m.online ? '🟢' : '⚫'} — ${fmt(m.onlineSeconds)} • ☠️ ${m.deaths}${g}`;
+                return `${medal} **${m.name}** ${m.online ? '🟢' : '⚫'} — ${fmt(m.onlineSeconds)} • ☠️ ${m.deaths}${g}`;
               })
               .join('\n')
           )
@@ -495,7 +556,6 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
         if (!rows.length) {
           return interaction.reply({ content: 'Статистики за этот период пока нет.', ephemeral: true });
         }
-        const disc = await resolveDiscordNames(players, rows, discord);
         const fmt = (s) => {
           s = Math.max(0, Math.round(s));
           const h = Math.floor(s / 3600);
@@ -506,10 +566,10 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
         };
         const nameCol = Math.max(6, ...rows.map((m) => (m.name || '').length)) + 2;
         const table = rows
-          .map((m, i) => {
-            const tag = disc.has(String(m.steamId)) ? ` (@${disc.get(String(m.steamId))})` : '';
-            return `${i + 1}. ${m.online ? '🟢' : '⚫'} ${(m.name || '?').padEnd(nameCol)}${fmt(m.onlineSeconds)}${m.sessions ? `  · ${m.sessions} сес.` : ''}${tag}`;
-          })
+          .map(
+            (m, i) =>
+              `${i + 1}. ${m.online ? '🟢' : '⚫'} ${(m.name || '?').padEnd(nameCol)}${fmt(m.onlineSeconds)}${m.sessions ? `  · ${m.sessions} сес.` : ''}`
+          )
           .join('\n');
         const embed = new EmbedBuilder()
           .setTitle(isWeek ? '🏆 Топ недели (наиграно)' : '🏆 Топ за вайп (наиграно)')
@@ -666,60 +726,13 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
         return interaction.reply({ content: url ? `Живая карта: ${url}` : 'Карта выключена.', ephemeral: true });
       }
       case 'link': {
-        const q = (interaction.options.getString('player') || '').trim();
-        if (!q) return interaction.reply({ content: 'Укажи ник, Steam ID или ссылку на профиль.', ephemeral: true });
-        let steamId = null;
-        if (/^\d{17}$/.test(q)) steamId = q;
-        if (!steamId && players) {
-          const hit = players.find(q)[0];
-          if (hit) steamId = hit.steamId;
-        }
-        if (!steamId && steam) steamId = await steam.resolve(q);
-        if (!steamId) {
-          return interaction.reply({ content: `Не нашёл «${q}». Вставь Steam ID (17 цифр) или ссылку на профиль.`, ephemeral: true });
-        }
-        const profile = steam ? await steam.get(steamId) : null;
-        const name = (profile && profile.name) || q;
-        players.linkDiscord(steamId, interaction.user.id, name);
-        return interaction.reply({
-          content: `✅ Привязано: **${name}** (Steam ID \`${steamId}\`) к твоему Discord.\nТеперь в статистике и /top бот покажет твой Discord-ник.`,
-          ephemeral: true,
-        });
+        return pairing.linkCommand(interaction);
       }
       case 'unlink': {
-        const ok = players.unlinkDiscord(interaction.user.id);
-        return interaction.reply({ content: ok ? '✅ Привязка убрана.' : 'У тебя нет привязки.', ephemeral: true });
-      }
-      case 'who': {
-        const q = (interaction.options.getString('player') || '').trim();
-        if (!q) return interaction.reply({ content: 'Укажи ник или Steam ID.', ephemeral: true });
-        let steamId = null;
-        if (/^\d{17}$/.test(q)) steamId = q;
-        if (!steamId && analytics) {
-          const ql = q.toLowerCase();
-          const hit =
-            analytics.leaderboard().find((m) => m.steamId === q) ||
-            analytics.leaderboard().find((m) => (m.name || '').toLowerCase().includes(ql));
-          if (hit) steamId = hit.steamId;
-        }
-        if (!steamId && players) {
-          const hit = players.find(q)[0];
-          if (hit) steamId = hit.steamId;
-        }
-        if (!steamId) return interaction.reply({ content: `Не нашёл «${q}».`, ephemeral: true });
-        const e = players.get(steamId);
-        const playerName = (e && e.name) || steamId;
-        if (!e || !e.discordId) {
-          return interaction.reply({ content: `**${playerName}** — пока никто не привязан.`, ephemeral: true });
-        }
-        const user = await discord.client.users.fetch(e.discordId).catch(() => null);
-        return interaction.reply({
-          content: `**${playerName}** (${steamId}) — это ${user ? `**${user.username}**` : `\`${e.discordId}\``}.`,
-          ephemeral: true,
-        });
+        return pairing.unlinkCommand(interaction, managers);
       }
       default:
-        return interaction.reply({ content: 'Неизвестная команда.', ephemeral: true });
+        return interaction.reply({ content: 'Невідома команда.', ephemeral: true });
     }
   } catch (err) {
     log.error('Slash обработка не удалась:', err.message);
@@ -731,18 +744,15 @@ async function handleSlash(interaction, { managers, primary, webMap, discord, co
   }
 }
 
-// Discord-ники привязанных игроков (/link): steamId -> username.
-async function resolveDiscordNames(players, rows, discord) {
-  const out = new Map();
-  if (!players || !discord || !discord.client) return out;
-  const jobs = rows.map(async (m) => {
-    const e = players.get(m.steamId);
-    if (!e || !e.discordId) return;
-    const user = await discord.client.users.fetch(e.discordId).catch(() => null);
-    if (user) out.set(String(m.steamId), user.username);
-  });
-  await Promise.allSettled(jobs);
-  return out;
+function sourceLabel(source) {
+  switch (source) {
+    case 'a2s':
+      return 'A2S (прямой запрос к серверу)';
+    case 'rustplus':
+      return 'Rust+';
+    default:
+      return 'нет данных';
+  }
 }
 
 function fmtDurLong(s) {

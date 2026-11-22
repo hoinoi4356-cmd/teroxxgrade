@@ -11,9 +11,21 @@
       "status": "",
       "logs": "",
       "raid": "",
-      "afk": ""
+      "afk": "",
+      "pairing": ""
     },
     "channelsPerAccount": {}
+  },
+  "pairing": {
+    "enabled": true,
+    "autoStartBridge": true,
+    "autoApprove": false,
+    "ttlMinutes": 5,
+    "linkWindowMinutes": 10,
+    "adminRoles": [],
+    "websiteUrl": "https://your-site.onrender.com",
+    "autoNotifyWebsite": false,
+    "pairingSecret": ""
   },
   "rustplus": {
     "serverIp": "",
@@ -31,6 +43,16 @@
     "discordToGameFormat": "[Discord] {author}: {message}",
     "sayGameFormat": ">>> {message}",
     "pollMapMarkersSeconds": 20,
+    "online": {
+      "enabled": true,
+      "provider": "a2s",
+      "host": "127.0.0.1",
+      "queryPort": 28017,
+      "refreshSeconds": 60,
+      "presence": true,
+      "voiceChannelId": "",
+      "voiceChannelFormat": "Онлайн: {players}/{max}"
+    },
     "webMap": {
       "enabled": true,
       "port": 8787,

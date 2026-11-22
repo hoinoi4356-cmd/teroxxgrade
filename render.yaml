@@ -31,3 +31,37 @@ services:
     #     mountPath: /var/data
     #     sizeGB: 1
     # і тоді додай змінну DATA_DIR=/var/data.
+
+  # ------------------------------------------------------------------
+  # Discord бот тикетів (працює постійно, НЕ відповідає на HTTP).
+  # Тип сервісу — worker.
+  #
+  # УВАГА: на безкоштовному плані Render доступні лише веб-сервіси
+  # (вони засинають через 15 хвилин без відвідувань). Для бота потрібен
+  # план Starter або інший хост (Railway, Koyeb, власний VPS — дивись DEPLOY.md).
+  # Секретні змінні (DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, STAFF_ROLE_ID)
+  # задай у панелі Render → сервіс discord-ticket-bot → Environment Variables,
+  # НЕ додавай їх сюди у репозиторій.
+  # ------------------------------------------------------------------
+  - type: worker
+    name: discord-ticket-bot
+    runtime: node
+    rootDir: discord-ticket-bot
+    plan: starter
+    region: frankfurt
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: DISCORD_GUILD_ID
+        sync: false
+      - key: STAFF_ROLE_ID
+        sync: false
+      - key: TICKET_CATEGORY_NAME
+        value: Тикети
+      - key: RCON_URL
+        sync: false
